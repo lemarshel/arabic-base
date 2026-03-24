@@ -11,7 +11,7 @@
 const K = {
   learned:'arabic_learned', fam:'arabic_fam', mode:'arabic_mode', pal:'arabic_pal',
   prefs:'arabic_prefs', lang:'arabic_ui_lang', snaps:'arabic_snaps',
-  cols:'arabic_cols'
+  cols:'arabic_cols', events:'arabic_events'
 };
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -30,11 +30,14 @@ let filterPos   = '';
 let filterLetter = '';
 let searchTimer = null;
 let searchQuery = '';
+let lastSearchLogged = '';
+let lastSearchTs = 0;
 let voices      = [];
 let ttsRate     = 1;
 let dragSrc     = null;
 let confirmCb   = null;
 let rootMap     = new Map();
+let eventsLog   = [];
 
 const $ = id => document.getElementById(id);
 const $$ = sel => document.querySelectorAll(sel);
@@ -45,6 +48,7 @@ function loadState(){
   try{ learned = new Set(JSON.parse(localStorage.getItem(K.learned)||'[]')); }catch(e){}
   try{ fam     = new Set(JSON.parse(localStorage.getItem(K.fam)   ||'[]')); }catch(e){}
   try{ snaps   = JSON.parse(localStorage.getItem(K.snaps)||'[]');           }catch(e){}
+  try{ eventsLog = JSON.parse(localStorage.getItem(K.events)||'[]');        }catch(e){}
 
   currentLang  = localStorage.getItem(K.lang)||'ru';
   tashkeelOn   = true;
@@ -86,6 +90,14 @@ function normalizeRoot(root, word){
   s = s.replace(/(هما|هم|هن|كما|كم|كن|نا|ها|ه|ي|ك|ة|ات|ان|ون|ين|وا|تم|تن|ا)$/,'');
   if(s.length >= 3) return s.slice(0,3);
   return clean || s || '—';
+}
+
+// ── Learner event log ───────────────────────────────────────────────────────
+function logEvent(type, payload){
+  const evt = { ts: new Date().toISOString(), type, payload: payload||{} };
+  eventsLog.push(evt);
+  if(eventsLog.length > 2000) eventsLog.splice(0, eventsLog.length - 2000);
+  localStorage.setItem(K.events, JSON.stringify(eventsLog));
 }
 
 function normalizeArToken(s){
@@ -407,9 +419,11 @@ function onLearned(tr, cb){
     tr.classList.add('learned'); tr.classList.remove('familiar');
     const fc = tr.querySelector('.fam-cb'); if(fc) fc.checked = false;
     moveToSec(tr,'learned');
+    logEvent('learned', { word: key });
   } else {
     learned.delete(key); tr.classList.remove('learned');
     returnToPos(tr);
+    logEvent('unlearned', { word: key });
   }
   saveProgress(); updateStats(); updateSecHdrs();
 }
@@ -421,9 +435,11 @@ function onFam(tr, cb){
     tr.classList.add('familiar'); tr.classList.remove('learned');
     const lc = tr.querySelector('.learn-cb'); if(lc) lc.checked = false;
     moveToSec(tr,'fam');
+    logEvent('familiar', { word: key });
   } else {
     fam.delete(key); tr.classList.remove('familiar');
     returnToPos(tr);
+    logEvent('unfamiliar', { word: key });
   }
   saveProgress(); updateStats(); updateSecHdrs();
 }
@@ -492,6 +508,12 @@ function doSearch(q){
     if(hit) applyHL(tr, q);
   });
   applyFilters();
+  const now = Date.now();
+  if(q && q !== lastSearchLogged && (now - lastSearchTs) > 800){
+    logEvent('search', { q });
+    lastSearchLogged = q;
+    lastSearchTs = now;
+  }
 }
 
 function applyHL(tr, q){
@@ -562,12 +584,14 @@ function setMode(m){
   if(m!=='light') body.classList.add(m);
   localStorage.setItem(K.mode, m);
   $$('[data-mode]').forEach(b=>b.classList.toggle('active', b.dataset.mode===m));
+  logEvent('theme', { mode: m });
 }
 
 function setPalette(p){
   body.dataset.pal = p||'rose';
   localStorage.setItem(K.pal, p||'rose');
   $$('.pal-btn').forEach(b=>b.classList.toggle('active', b.dataset.pal===p));
+  logEvent('palette', { palette: p||'rose' });
 }
 
 function setLang(l){
@@ -576,6 +600,7 @@ function setLang(l){
   body.classList.toggle('lang-en', l==='en');
   $$('[data-lang]').forEach(b=>b.classList.toggle('active', b.dataset.lang===l));
   closeRootFamilies();
+  logEvent('lang', { lang: l });
 }
 
 // ── Tashkeel ──────────────────────────────────────────────────────────────────
@@ -596,6 +621,7 @@ function setTashkeel(on){
   const btn = $('tashkeel-btn');
   if(btn) btn.classList.toggle('active', on);
   closeRootFamilies();
+  logEvent('tashkeel', { enabled: !!on });
 }
 
 // ── Font Prefs ────────────────────────────────────────────────────────────────
@@ -744,6 +770,7 @@ function startStudy(){
   studyIdx = 0; studyKnown = 0;
   $('study-overlay').classList.add('open');
   showStudyCard();
+  logEvent('study_start', { pool: studyDeck.length });
 }
 
 function showStudyCard(){
@@ -793,6 +820,7 @@ function startQuiz(){
   $('quiz-overlay').classList.add('open');
   $('quiz-summary').style.display = 'none';
   showQuizCard();
+  logEvent('quiz_start', { size: sz });
 }
 
 function showQuizCard(){
@@ -984,6 +1012,7 @@ document.addEventListener('DOMContentLoaded', function(){
         b.classList.toggle('active', bt===0 ? filterTiers.size===0 : filterTiers.has(bt));
       });
       applyFilters();
+      logEvent('filter_tier', { tiers: Array.from(filterTiers.values()) });
     });
   });
 
@@ -1001,6 +1030,7 @@ document.addEventListener('DOMContentLoaded', function(){
         b.classList.toggle('active', (!filterLetter && !bl) || (bl && bl === filterLetter));
       });
       applyFilters();
+      logEvent('filter_letter', { letter: filterLetter || 'all' });
     });
   });
 
@@ -1019,6 +1049,7 @@ document.addEventListener('DOMContentLoaded', function(){
         });
       }
       applyFilters();
+      logEvent('filter_pos', { pos: filterPos || 'all' });
     });
   });
 
