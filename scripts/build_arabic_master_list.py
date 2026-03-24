@@ -35,6 +35,7 @@ LEIPZIG_URLS = (
     "70c35d6b1fb83635a024751667be0112/raw/"
     "b91875489ccf7eb1ca8270e1138faf1db43952ec/leipzig_urls.json"
 )
+MUSE_URL = "https://dl.fbaipublicfiles.com/arrival/dictionaries/en-ar.txt"
 
 AR_RE = re.compile(r"[\u0621-\u064A]")
 TASHKEEL_RE = re.compile(r"[\u064B-\u0652\u0670\u0640]")
@@ -48,6 +49,69 @@ def normalize_ar(s: str) -> str:
     s = re.sub(r"ئ", "ي", s)
     s = re.sub(r"ة", "ه", s)
     return re.sub(r"\s+", " ", s)
+
+MANUAL_GLOSS_RAW = {
+    "في": "in",
+    "من": "from",
+    "على": "on",
+    "إلى": "to",
+    "عن": "about",
+    "مع": "with",
+    "حتى": "until",
+    "إلا": "except",
+    "حيث": "where",
+    "منذ": "since",
+    "هذا": "this",
+    "هذه": "this",
+    "ذلك": "that",
+    "تلك": "that",
+    "الذي": "who/that",
+    "التي": "who/that",
+    "ما": "what/that",
+    "لا": "no; not",
+    "بل": "but; rather",
+    "قد": "already; has",
+    "كان": "was",
+    "ليس": "is not",
+    "لم": "did not",
+    "لن": "will not",
+    "سوف": "will",
+    "ثم": "then",
+    "إذا": "if; when",
+    "أو": "or",
+    "و": "and",
+    "أم": "or (choice)",
+    "كل": "all; every",
+    "أي": "which; any",
+    "هو": "he",
+    "هي": "she",
+    "هم": "they",
+    "نحن": "we",
+    "أنت": "you",
+    "أنا": "I",
+    "هنا": "here",
+    "هناك": "there",
+    "الآن": "now",
+    "بعد": "after",
+    "قبل": "before",
+    "فوق": "above",
+    "تحت": "under",
+    "بين": "between",
+    "عند": "at",
+    "لدى": "at; with",
+    "بدون": "without",
+    "نعم": "yes",
+    "ربما": "maybe",
+    "لأن": "because",
+    "لكن": "but",
+    "إذ": "when; since",
+    "كي": "so that",
+    "لعل": "perhaps",
+    "يا": "O! (vocative)",
+    "ل": "to; for",
+}
+
+MANUAL_GLOSS = {normalize_ar(k): v for k, v in MANUAL_GLOSS_RAW.items()}
 
 
 def is_arabic_word(s: str) -> bool:
@@ -106,6 +170,26 @@ def parse_size(size: str) -> int:
 
 def fetch_leipzig_urls() -> Dict[str, Dict]:
     return requests.get(LEIPZIG_URLS).json()
+
+def load_muse_dict() -> Dict[str, List[str]]:
+    muse_path = SRC_DIR / "muse_en_ar.txt"
+    if not muse_path.exists():
+        r = requests.get(MUSE_URL)
+        r.raise_for_status()
+        muse_path.write_text(r.text, encoding="utf-8")
+    mapping: Dict[str, List[str]] = defaultdict(list)
+    with open(muse_path, encoding="utf-8") as f:
+        for line in f:
+            parts = line.strip().split()
+            if len(parts) < 2:
+                continue
+            en, ar = parts[0], parts[1]
+            ar_norm = normalize_ar(ar)
+            if not ar_norm:
+                continue
+            if en not in mapping[ar_norm]:
+                mapping[ar_norm].append(en)
+    return mapping
 
 
 def choose_corpora(urls: Dict[str, Dict]) -> Dict[str, Dict]:
@@ -272,9 +356,24 @@ def main():
     engine = os.environ.get("AR_MT_ENGINE", "opus")
     trans_cache_path = SRC_DIR / "arabic_master_translations.json"
     trans_cache = {}
-    if trans_cache_path.exists():
+    reset_cache = os.environ.get("AR_TRANSLATE_RESET", "0") == "1"
+    if trans_cache_path.exists() and not reset_cache:
         trans_cache = json.loads(trans_cache_path.read_text(encoding="utf-8"))
     tok = model = model_name = None
+    muse_map = load_muse_dict()
+    # prefill from manual + MUSE dictionary
+    for c in final:
+        norm = normalize_ar(c["lemma"])
+        manual = MANUAL_GLOSS.get(norm)
+        if manual:
+            trans_cache[c["lemma"]] = manual
+            continue
+        if c["lemma"] in trans_cache:
+            continue
+        muse_glosses = muse_map.get(norm)
+        if muse_glosses:
+            trans_cache[c["lemma"]] = limit_gloss("; ".join(muse_glosses[:2]), 2)
+
     if do_translate:
         tok, model, model_name = load_translator(engine)
         missing = [c["lemma"] for c in final if c["lemma"] not in trans_cache]
@@ -286,7 +385,13 @@ def main():
                 trans_cache[src] = limit_gloss(out, 2)
     uncertain = []
     for idx, c in enumerate(final, start=1):
-        gloss = trans_cache.get(c["lemma"], "")
+        norm = normalize_ar(c["lemma"])
+        manual = MANUAL_GLOSS.get(norm)
+        gloss = manual if manual else trans_cache.get(c["lemma"], "")
+        if not gloss:
+            muse_glosses = muse_map.get(normalize_ar(c["lemma"]))
+            if muse_glosses:
+                gloss = limit_gloss("; ".join(muse_glosses[:2]), 2)
         # canonical form rule (rough, based on POS)
         pos = c["pos"]
         if pos.startswith("verb") or pos == "verb":

@@ -27,6 +27,12 @@ Final list is the **top 4,500** lemmas by usefulness score.
 - Tokens that collapse to the same lemma are merged into a single entry.
 - Merged forms are stored in `merged_duplicates.csv`.
 
+## Translation / Gloss Strategy
+- **Manual high‑frequency function‑word overrides** (prepositions, conjunctions, pronouns).
+- **MUSE Arabic‑English bilingual dictionary** used for common words.
+- **NLLB‑200** used as MT fallback for missing glosses (configurable).
+- Uncertain items (long/odd glosses) are collected in `uncertain_items.csv` for human review.
+
 ## Output
 - Full list: `data/arabic_master_list.csv`
 - JSON version: `data/arabic_master_list.json`

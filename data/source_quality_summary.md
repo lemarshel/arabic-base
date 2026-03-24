@@ -19,6 +19,24 @@
 - Single‑token disambiguation lacks full context
 - Some ambiguity remains for highly polysemous words
 
+## MUSE Arabic‑English Dictionary
+**Strengths:**
+- Open bilingual lexicon
+- Good baseline glosses for common words
+
+**Weaknesses:**
+- Sparse for function words and some MSA lemmas
+- Often single‑word glosses only
+
+## NLLB‑200 (MT fallback)
+**Strengths:**
+- Strong open multilingual model
+- Better than lightweight MT on modern usage
+
+**Weaknesses:**
+- Single‑word translation can be noisy
+- Needs human review for polysemous items
+
 ## OPUS / Subtitles (Planned)
 **Strengths:**
 - Great for everyday spoken usage
