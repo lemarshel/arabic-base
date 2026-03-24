@@ -60,7 +60,8 @@ body[data-pal=citrus]{ --pal-accent:#e09f3e; --pal-dark:#b07d28; --pal-light:#ff
 body[data-pal=coral]{ --pal-accent:#ff6b6b; --pal-dark:#d94f4f; --pal-light:#ffe8e8; }
 
 *{ box-sizing:border-box; margin:0; padding:0; }
-body{ font-family:'Noto Sans',Arial,sans-serif; background:var(--bg); color:var(--text); font-size:14px; }
+/* RU/EN typography matches hsk-base (system sans) */
+body{ font-family:Arial,'Segoe UI',sans-serif; background:var(--bg); color:var(--text); font-size:14px; }
 
 /* ===== Toolbar layout =====
    Row 1: search + stats + theme + palette + language
@@ -280,13 +281,16 @@ td.rownum{ text-align:center; color:var(--text3); font-size:12px; padding:8px 4p
 .lv-6{ background:var(--lv6); }
 .lv-7{ background:var(--lv7); }
 .tts-btn{
-  background:none; border:none; cursor:pointer;
-  color:var(--pal-accent); font-size:13px; padding:2px 3px;
-  border-radius:4px; opacity:.65; transition:opacity .15s, background .15s;
-  flex-shrink:0; margin-top:2px;
+  display:inline-flex; align-items:center; justify-content:center;
+  width:20px; height:20px;
+  border:1px solid #ddd; border-radius:3px;
+  cursor:pointer; background:#f9f9f9; font-size:.7em; color:#666;
+  flex-shrink:0; padding:0; line-height:1;
+  transition:background .15s, color .15s, border-color .15s;
 }
-.tts-btn:hover{ opacity:1; background:var(--pal-light); }
-.tts-btn.on{ opacity:1; }
+body.dark .tts-btn{ background:#1c1e34; border-color:#353754; color:#b3b3c7; }
+.tts-btn:hover{ background:var(--pal-accent); color:#fff; border-color:var(--pal-accent); }
+.tts-btn.on{ background:var(--pal-accent); color:#fff; border-color:var(--pal-accent); }
 
 /* ===== Root column ===== */
 /* Root column */
@@ -308,12 +312,14 @@ td.rownum{ text-align:center; color:var(--text3); font-size:12px; padding:8px 4p
 .ex-td{ padding:8px 10px; }
 .ex-inner{ display:flex; align-items:flex-start; gap:5px; }
 .ex-text{ flex:1; }
+.ex-ar-line{ display:flex; align-items:center; gap:8px; }
 .ex-ar{
   font-family:'Noto Naskh Arabic','Amiri',serif;
   font-size:var(--sz-ar-ex, 16px);
   direction:rtl; unicode-bidi:embed; display:block;
   line-height:1.7; color:var(--text2);
 }
+.ex-ar-line .tts-btn{ width:24px; height:24px; font-size:.8em; margin:0; }
 .ex-tr{ display:block; font-size:11px; color:var(--text3); margin-top:3px; line-height:1.5; }
 /* Both ex-en and ex-ru always visible */
 .ex-en{ display:block; }

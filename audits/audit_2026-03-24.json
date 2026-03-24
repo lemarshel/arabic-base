@@ -1,0 +1,17 @@
+{
+  "summary": {
+    "total_words": 4500,
+    "missing_fields": 0,
+    "no_example_match": 0,
+    "ru_not_cyrillic": 0,
+    "root_len_out": 0,
+    "pos_unknown": 0
+  },
+  "samples": {
+    "missing_fields": [],
+    "no_example_match": [],
+    "ru_not_cyrillic": [],
+    "root_len_out": [],
+    "pos_unknown": []
+  }
+}

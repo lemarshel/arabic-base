@@ -25,9 +25,10 @@ let tashkeelOn  = true;
 let studyDeck   = []; let studyIdx = 0; let studyKnown = 0;
 let quizWords   = []; let quizIdx  = 0; let quizCorrect = 0;
 let quizPending = null;
-let filterTier  = 0;
+let filterTiers = new Set();
 let filterPos   = '';
 let searchTimer = null;
+let searchQuery = '';
 let voices      = [];
 let ttsRate     = 1;
 let dragSrc     = null;
@@ -70,6 +71,21 @@ const TASHKEEL_RE = /[\u064B-\u0652\u0670\u0640]/g;
 function stripTashkeel(s){ return s.replace(TASHKEEL_RE, ''); }
 function displayAr(s){ return tashkeelOn ? s : stripTashkeel(s); }
 
+// ── Root normalizer (triliteral / quadriliteral display) ────────────────────
+// Arabic roots are usually 3 consonants, sometimes 4. We keep 4 when present,
+// otherwise fall back to a light heuristic for display consistency.
+function normalizeRoot(root, word){
+  const clean = stripTashkeel(root||'').replace(/[^\u0621-\u064A]/g,'');
+  if(clean.length >= 3 && clean.length <= 4) return clean;
+  let s = stripTashkeel(word||'').replace(/[^\u0621-\u064A]/g,'');
+  // common prefixes
+  s = s.replace(/^(?:ال|وال|فال|بال|كال|لل)/,'');
+  // suffixes (pronouns / plural / feminine)
+  s = s.replace(/(هما|هم|هن|كما|كم|كن|نا|ها|ه|ي|ك|ة|ات|ان|ون|ين|وا|تم|تن|ا)$/,'');
+  if(s.length >= 3) return s.slice(0,3);
+  return clean || s || '—';
+}
+
 function normalizeArToken(s){
   return stripTashkeel((s||'').trim())
     .replace(/[أإآٱ]/g,'ا')
@@ -109,8 +125,8 @@ function buildTable(){
 
   function sortByRoot(words){
     return [...words].sort((a,b)=>{
-      const ra = (a.r && a.r!=='—') ? a.r.replace(/[-\s]/g,'').replace(/[\u064B-\u0652\u0670\u0640]/g,'') : '\u064A\u064A';
-      const rb = (b.r && b.r!=='—') ? b.r.replace(/[-\s]/g,'').replace(/[\u064B-\u0652\u0670\u0640]/g,'') : '\u064A\u064A';
+      const ra = normalizeRoot(a.r, a.w);
+      const rb = normalizeRoot(b.r, b.w);
       if(ra!==rb) return ra.localeCompare(rb,'ar');
       return (a.w||'').localeCompare(b.w||'','ar');
     });
@@ -143,7 +159,8 @@ function buildTable(){
       rowNum++;
       const tr = buildWordRow(w, rowNum, groupKey);
       tbl.appendChild(tr);
-      allRows.push({key:w.w, pos:mapPos(w.pos), root:w.r||'', level:w.level||1, tier:w.tier||w.level||1, group:groupKey, tr, w});
+      const root = normalizeRoot(w.r, w.w);
+      allRows.push({key:w.w, pos:mapPos(w.pos), root, level:w.level||1, tier:w.tier||w.level||1, group:groupKey, tr, w});
       wMap.set(w.w, tr);
     });
   });
@@ -154,6 +171,7 @@ function buildTable(){
 
 function buildWordRow(w, num, groupKey=''){
   const key = w.w;
+  const root = normalizeRoot(w.r, w.w);
   const mapPos = (p)=>{
     p=(p||'').trim();
     if(!p) return 'اسم';
@@ -167,7 +185,7 @@ function buildWordRow(w, num, groupKey=''){
   tr.className = 'word-row';
   tr.dataset.key   = key;
   tr.dataset.group = groupKey || 'pos:'+(mapPos(w.pos));
-  tr.dataset.root  = w.r  || '—';
+  tr.dataset.root  = root  || '—';
   tr.dataset.level = w.level || 1;
   tr.dataset.pos   = mapPos(w.pos);
   tr.dataset.en    = (w.en||'').toLowerCase();
@@ -189,16 +207,16 @@ function buildWordRow(w, num, groupKey=''){
   <div class="wc-inner">
     <div class="wc-text">
       <span class="ar">${esc(arWord)}</span>
-      <span class="wc-root">${esc(w.r||'')}</span>
+      <span class="wc-root">${esc(root||'')}</span>
       ${w.pl && w.pl !== '—' ? '<span class="wc-plural">جمع: '+esc(w.pl)+'</span>' : ''}
     </div>
     <div style="display:flex;flex-direction:column;align-items:center;gap:3px">
       <span class="lv-badge lv-${lv}">${lv}</span>
-      <button class="tts-btn" data-ar="${esc(key)}" title="Speak">&#128266;</button>
+      <button class="tts-btn" data-ar="${esc(key)}" title="Speak">&#9654;</button>
     </div>
   </div>
 </td>
-<td data-col="root" class="root-cell">${esc(w.r||'—')}</td>
+<td data-col="root" class="root-cell">${esc(root||'—')}</td>
 <td data-col="trans" class="trans-cell">
   <span class="trans-en">${esc(w.en||'')}</span>
   <span class="trans-ru">${esc(pickRu(w))}</span>
@@ -206,11 +224,13 @@ function buildWordRow(w, num, groupKey=''){
 <td data-col="ex" class="ex-td">
   <div class="ex-inner">
     <div class="ex-text">
-      <span class="ex-ar">${esc(arEx)}</span>
+      <div class="ex-ar-line">
+        <button class="tts-btn" data-ar="${esc(w.xa||'')}" title="Play">&#9654;</button>
+        <span class="ex-ar">${esc(arEx)}</span>
+      </div>
       <span class="ex-tr ex-en">${esc(w.xe||'')}</span>
       <span class="ex-tr ex-ru">${esc(pickXr(w))}</span>
     </div>
-    <button class="tts-btn" data-ar="${esc(w.xa||'')}" style="margin-top:2px">&#128266;</button>
   </div>
 </td>`;
   return tr;
@@ -251,6 +271,22 @@ function updateStats(){
     if(fill) fill.style.width = pct+'%';
     if(pctEl) pctEl.textContent = pct+'%';
   });
+  updatePosSummary();
+}
+
+// ── POS summary counts (ism / fi'l / harf) ───────────────────────────────────
+function updatePosSummary(){
+  const counts = { '':0, 'اسم':0, 'فعل':0, 'حرف':0 };
+  allRows.forEach(r=>{
+    if(r.tr.style.display==='none') return;
+    counts['']++;
+    if(counts[r.pos] !== undefined) counts[r.pos]++;
+  });
+  const set = (id,val)=>{ const el=$(id); if(el) el.textContent=val; };
+  set('pos-count-all', counts['']);
+  set('pos-count-noun', counts['اسم']);
+  set('pos-count-verb', counts['فعل']);
+  set('pos-count-part', counts['حرف']);
 }
 
 // ── Checkbox Logic ────────────────────────────────────────────────────────────
@@ -333,18 +369,19 @@ function togglePosGroup(ghDiv){
 // ============================================================================
 function doSearch(q){
   q = q.trim().toLowerCase();
+  searchQuery = q;
   const qNorm = normalizeArToken(q);
   $$('tr.word-row').forEach(tr=>{
     clearHL(tr);
-    if(!q){ tr.style.display = ''; return; }
+    if(!q){ tr.dataset.match = '1'; return; }
     const ar = normalizeArToken(tr.dataset.key||'');
     const ru = (tr.dataset.ru||'').toLowerCase();
     const en = (tr.dataset.en||'').toLowerCase();
     const hit = ar.includes(qNorm) || ru.includes(q) || en.includes(q);
-    tr.style.display = hit ? '' : 'none';
+    tr.dataset.match = hit ? '1' : '0';
     if(hit) applyHL(tr, q);
   });
-  updatePosVis();
+  applyFilters();
 }
 
 function applyHL(tr, q){
@@ -372,13 +409,16 @@ function updatePosVis(){
 // - Triggers renumbering and stats refresh
 // ============================================================================
 function applyFilters(){
-  allRows.forEach(({tr, tier})=>{
+  allRows.forEach(({tr, tier, pos})=>{
     let show = true;
-    if(filterTier && tier !== filterTier) show = false;
+    if(filterTiers.size && !filterTiers.has(tier)) show = false;
+    if(filterPos && pos !== filterPos) show = false;
+    if(tr.dataset.match === '0') show = false;
     tr.style.display = show ? '' : 'none';
   });
   updatePosVis();
   renum();
+  updateStats();
 }
 
 // ── TTS ───────────────────────────────────────────────────────────────────────
@@ -530,7 +570,8 @@ function exportCSV(){
   let csv = '\uFEFF#,Arabic,Root,Plural,EN,RU,Example AR,Example RU,Tier\n';
   rows.forEach((r,i)=>{
     const w = r.w;
-    csv += [i+1, w.w, w.r||'', w.pl||'', w.en||'', w.ru||'', (w.xa||'').replace(/"/g,'""'), (w.xr||'').replace(/"/g,'""'), w.tier].map(c=>'\"'+c+'\"').join(',') + '\n';
+    const root = normalizeRoot(w.r, w.w);
+    csv += [i+1, w.w, root||'', w.pl||'', w.en||'', w.ru||'', (w.xa||'').replace(/"/g,'""'), (w.xr||'').replace(/"/g,'""'), w.tier].map(c=>'\"'+c+'\"').join(',') + '\n';
   });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
@@ -785,8 +826,34 @@ document.addEventListener('DOMContentLoaded', function(){
   $$('.tier-filter-btn').forEach(btn=>{
     btn.addEventListener('click',()=>{
       const t = parseInt(btn.dataset.tier)||0;
-      filterTier = (filterTier === t) ? 0 : t;
-      $$('.tier-filter-btn').forEach(b=>b.classList.toggle('active', (parseInt(b.dataset.tier)||0)===filterTier));
+      if(t === 0){
+        filterTiers.clear();
+      } else {
+        if(filterTiers.has(t)) filterTiers.delete(t);
+        else filterTiers.add(t);
+      }
+      $$('.tier-filter-btn').forEach(b=>{
+        const bt = parseInt(b.dataset.tier)||0;
+        b.classList.toggle('active', bt===0 ? filterTiers.size===0 : filterTiers.has(bt));
+      });
+      applyFilters();
+    });
+  });
+
+  // POS filter buttons (ism / fi'l / harf)
+  $$('.pos-filter-btn').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      const p = (btn.dataset.pos||'').trim();
+      filterPos = (filterPos === p) ? '' : p;
+      $$('.pos-filter-btn').forEach(b=>{
+        b.classList.toggle('active', (b.dataset.pos||'').trim() === filterPos);
+      });
+      if(!filterPos){
+        // make sure "all" is active
+        $$('.pos-filter-btn').forEach(b=>{
+          if(!(b.dataset.pos||'').trim()) b.classList.add('active');
+        });
+      }
       applyFilters();
     });
   });
