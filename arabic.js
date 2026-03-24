@@ -761,6 +761,15 @@ document.addEventListener('DOMContentLoaded', function(){
   $$('[data-lang]').forEach(b=>b.classList.toggle('active', b.dataset.lang===currentLang));
   const pal = localStorage.getItem(K.pal)||'rose';
   $$('.pal-btn').forEach(b=>b.classList.toggle('active', b.dataset.pal===pal));
+  // Initial active state for tier + POS filters
+  $$('.tier-filter-btn').forEach(b=>{
+    const t = parseInt(b.dataset.tier)||0;
+    b.classList.toggle('active', t===0 && filterTiers.size===0);
+  });
+  $$('.pos-filter-btn').forEach(b=>{
+    const p = (b.dataset.pos||'').trim();
+    b.classList.toggle('active', p === filterPos);
+  });
   $$('[data-col-toggle]').forEach(b=>{
     const col = b.dataset.colToggle;
     b.classList.toggle('active', body.classList.contains('hide-'+col));
