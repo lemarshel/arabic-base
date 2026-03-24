@@ -1,0 +1,11 @@
+# Large source files / caches (rebuild inputs)
+data_sources/
+*.tar.bz2
+sentences.csv
+links.csv
+*.bin
+*.pt
+*.safetensors
+
+# Local caches
+*.cache.json

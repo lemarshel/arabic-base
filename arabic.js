@@ -28,6 +28,7 @@ let quizPending = null;
 let filterTiers = new Set();
 let filterPos   = '';
 let filterLetter = '';
+let filterSubpos = '';
 let searchTimer = null;
 let searchQuery = '';
 let lastSearchLogged = '';
@@ -108,6 +109,26 @@ function normalizeArToken(s){
     .replace(/ئ/g,'ي')
     .replace(/ة/g,'ه')
     .replace(/\s+/g,'');
+}
+// Sub-division lexicons (normalized Arabic)
+const SUBPOS_LISTS = {
+  question: new Set(['من','ماذا','ما','متى','اين','كيف','لماذا','كم','اي','هل','ا']),
+  demonstrative: new Set(['هذا','هذه','هذان','هذين','هؤلاء','ذلك','تلك','اولئك','هنا','هناك']),
+  pronoun: new Set(['انا','انت','انتي','انتم','انتن','هو','هي','هما','هم','هن','نحن','اياي','اياك','اياكم','اياكن','اياه','اياها','اياهم','اياهن']),
+  relative: new Set(['الذي','التي','الذين','اللذان','اللذين','اللتان','اللتين','اللواتي','اللاتي','من','ما']),
+  preposition: new Set(['في','على','عن','الى','من','مع','بين','عند','قبل','بعد','منذ','حتى','خلال','فوق','تحت','حول','نحو','لدى','لكل','ب','ك','ل']),
+  conjunction: new Set(['و','ف','ثم','او','ام','بل','لكن','لان','حتى','اذا','اذن']),
+  negation: new Set(['لا','لم','لن','ما','ليس','غير','بدون']),
+  number: new Set(['صفر','واحد','احد','اثنان','اثنين','ثلاثة','اربعة','خمسة','ستة','سبعة','ثمانية','تسعة','عشرة','مئة','مائة','الف','مليون']),
+  time: new Set(['اليوم','امس','غدا','الان','حين','وقت','ساعة','دقيقة','شهر','سنة','عام','اسبوع','صباح','مساء','ليلة'])
+};
+function getSubposList(word){
+  const n = normalizeArToken(word);
+  const matches = [];
+  Object.keys(SUBPOS_LISTS).forEach(k=>{
+    if(SUBPOS_LISTS[k].has(n)) matches.push(k);
+  });
+  return matches;
 }
 // Initial-letter extractor (for Arabic alphabet filter)
 function getInitialLetter(word){
@@ -217,6 +238,7 @@ function buildWordRow(w, num, groupKey=''){
   tr.dataset.root  = root  || '—';
   tr.dataset.level = w.level || 1;
   tr.dataset.pos   = mapPos(w.pos);
+  tr.dataset.subpos = getSubposList(key).join(',');
   tr.dataset.letter = getInitialLetter(key);
   tr.dataset.en    = (w.en||'').toLowerCase();
   tr.dataset.ru    = (w.ru||'').toLowerCase();
@@ -409,6 +431,32 @@ function updatePosSummary(){
   set('pos-count-noun', counts['اسم']);
   set('pos-count-verb', counts['فعل']);
   set('pos-count-part', counts['حرف']);
+  updateSubposSummary();
+}
+
+// ── Sub-division counts (question words, pronouns, etc.) ────────────────────
+function updateSubposSummary(){
+  const base = {
+    all:0, question:0, demonstrative:0, pronoun:0, relative:0,
+    preposition:0, conjunction:0, negation:0, number:0, time:0
+  };
+  allRows.forEach(r=>{
+    if(r.tr.style.display==='none') return;
+    base.all++;
+    const sp = (r.tr.dataset.subpos||'').split(',').filter(Boolean);
+    sp.forEach(k=>{ if(base[k] !== undefined) base[k]++; });
+  });
+  const set = (id,val)=>{ const el=$(id); if(el) el.textContent=val; };
+  set('subpos-count-all', base.all);
+  set('subpos-count-question', base.question);
+  set('subpos-count-demonstrative', base.demonstrative);
+  set('subpos-count-pronoun', base.pronoun);
+  set('subpos-count-relative', base.relative);
+  set('subpos-count-preposition', base.preposition);
+  set('subpos-count-conjunction', base.conjunction);
+  set('subpos-count-negation', base.negation);
+  set('subpos-count-number', base.number);
+  set('subpos-count-time', base.time);
 }
 
 // ── Checkbox Logic ────────────────────────────────────────────────────────────
@@ -547,6 +595,10 @@ function applyFilters(){
     let show = true;
     if(filterTiers.size && !filterTiers.has(tier)) show = false;
     if(filterPos && pos !== filterPos) show = false;
+    if(filterSubpos){
+      const sp = tr.dataset.subpos || '';
+      if(!sp.split(',').includes(filterSubpos)) show = false;
+    }
     if(filterLetter && tr.dataset.letter !== filterLetter) show = false;
     if(tr.dataset.match === '0') show = false;
     tr.style.display = show ? '' : 'none';
@@ -913,6 +965,10 @@ document.addEventListener('DOMContentLoaded', function(){
     const p = (b.dataset.pos||'').trim();
     b.classList.toggle('active', p === filterPos);
   });
+  $$('.subpos-filter-btn').forEach(b=>{
+    const sp = (b.dataset.subpos||'').trim();
+    b.classList.toggle('active', !filterSubpos && sp === '');
+  });
   $$('.letter-filter-btn').forEach(b=>{
     const l = b.dataset.letter || '';
     b.classList.toggle('active', !filterLetter && l === '');
@@ -1050,6 +1106,24 @@ document.addEventListener('DOMContentLoaded', function(){
       }
       applyFilters();
       logEvent('filter_pos', { pos: filterPos || 'all' });
+    });
+  });
+
+  // Sub-division filters (question words, pronouns, etc.)
+  $$('.subpos-filter-btn').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      const sp = (btn.dataset.subpos||'').trim();
+      filterSubpos = (filterSubpos === sp) ? '' : sp;
+      $$('.subpos-filter-btn').forEach(b=>{
+        b.classList.toggle('active', (b.dataset.subpos||'').trim() === filterSubpos);
+      });
+      if(!filterSubpos){
+        $$('.subpos-filter-btn').forEach(b=>{
+          if(!(b.dataset.subpos||'').trim()) b.classList.add('active');
+        });
+      }
+      applyFilters();
+      logEvent('filter_subpos', { subpos: filterSubpos || 'all' });
     });
   });
 

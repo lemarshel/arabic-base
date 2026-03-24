@@ -33,6 +33,9 @@ issues = {
     "ru_not_cyrillic": [],
     "root_len_out": [],
     "pos_unknown": [],
+    "no_tashkeel_word": [],
+    "no_tashkeel_example": [],
+    "too_many_translations": [],
 }
 
 allowed_pos = {"اسم","فعل","حرف"}
@@ -48,6 +51,11 @@ for i,w in enumerate(arr):
     if wid and w.get('xa'):
         if normalize_ar_token(wid) not in normalize_ar_token(w.get('xa','')):
             issues['no_example_match'].append({"idx":i,"w":wid,"xa":w.get('xa','')})
+    # diacritics present
+    if wid and not TASHKEEL_RE.search(wid):
+        issues['no_tashkeel_word'].append({"idx":i,"w":wid})
+    if w.get('xa') and not TASHKEEL_RE.search(w.get('xa','')):
+        issues['no_tashkeel_example'].append({"idx":i,"w":wid})
     # ru cyrillic
     ru = (w.get('ru') or '').strip()
     if ru and not CYR_RE.search(ru):
@@ -61,6 +69,13 @@ for i,w in enumerate(arr):
     pos = (w.get('pos') or '').strip()
     if pos and pos not in allowed_pos and all(k not in pos for k in allowed_pos):
         issues['pos_unknown'].append({"idx":i,"w":wid,"pos":pos})
+    # too many translations (EN/RU)
+    for fld in ['en','ru']:
+        txt = (w.get(fld) or '').strip()
+        if txt:
+            parts = [p.strip() for p in re.split(r"[;,]", txt) if p.strip()]
+            if len(parts) > 2:
+                issues['too_many_translations'].append({"idx":i,"w":wid,"field":fld,"val":txt})
 
 summary = {
     "total_words": len(arr),
@@ -69,6 +84,9 @@ summary = {
     "ru_not_cyrillic": len(issues['ru_not_cyrillic']),
     "root_len_out": len(issues['root_len_out']),
     "pos_unknown": len(issues['pos_unknown']),
+    "no_tashkeel_word": len(issues['no_tashkeel_word']),
+    "no_tashkeel_example": len(issues['no_tashkeel_example']),
+    "too_many_translations": len(issues['too_many_translations']),
 }
 
 report = {

@@ -5,13 +5,19 @@
     "no_example_match": 0,
     "ru_not_cyrillic": 0,
     "root_len_out": 0,
-    "pos_unknown": 0
+    "pos_unknown": 0,
+    "no_tashkeel_word": 0,
+    "no_tashkeel_example": 0,
+    "too_many_translations": 0
   },
   "samples": {
     "missing_fields": [],
     "no_example_match": [],
     "ru_not_cyrillic": [],
     "root_len_out": [],
-    "pos_unknown": []
+    "pos_unknown": [],
+    "no_tashkeel_word": [],
+    "no_tashkeel_example": [],
+    "too_many_translations": []
   }
 }

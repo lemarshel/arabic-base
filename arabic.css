@@ -171,6 +171,13 @@ select.tb-sel{
 .pos-chip .pc-count{ font-weight:700; font-size:13px; }
 .pos-chip .pc-ru{ font-size:11px; opacity:.8; }
 
+/* Sub-division summary (question words, pronouns, etc.) */
+#subpos-summary{
+  display:flex; justify-content:center; gap:12px; flex-wrap:wrap;
+  padding:6px 16px; border-bottom:1px solid var(--border);
+  background:var(--bg2);
+}
+
 /* ===== Level summary chips (difficulty) ===== */
 /* ── TIER SUMMARY ── */
 #tier-summary {
