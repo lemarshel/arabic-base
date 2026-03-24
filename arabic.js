@@ -27,12 +27,14 @@ let quizWords   = []; let quizIdx  = 0; let quizCorrect = 0;
 let quizPending = null;
 let filterTiers = new Set();
 let filterPos   = '';
+let filterLetter = '';
 let searchTimer = null;
 let searchQuery = '';
 let voices      = [];
 let ttsRate     = 1;
 let dragSrc     = null;
 let confirmCb   = null;
+let rootMap     = new Map();
 
 const $ = id => document.getElementById(id);
 const $$ = sel => document.querySelectorAll(sel);
@@ -94,6 +96,20 @@ function normalizeArToken(s){
     .replace(/ئ/g,'ي')
     .replace(/ة/g,'ه')
     .replace(/\s+/g,'');
+}
+// Initial-letter extractor (for Arabic alphabet filter)
+function getInitialLetter(word){
+  let s = stripTashkeel((word||'').trim());
+  // strip definite article & common attached prefixes
+  s = s.replace(/^(?:ال|وال|فال|بال|كال|لل)/, '');
+  s = s.replace(/^[^\u0621-\u064A]+/, '');
+  if(!s) return '';
+  let ch = s[0];
+  if(/[أإآٱ]/.test(ch)) ch = 'ا';
+  if(ch === 'ى' || ch === 'ئ') ch = 'ي';
+  if(ch === 'ؤ') ch = 'و';
+  if(ch === 'ة') ch = 'ه';
+  return ch;
 }
 function esc(s){
   return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -167,6 +183,7 @@ function buildTable(){
 
   buildSpecialSection('learned');
   buildSpecialSection('fam');
+  buildRootMap();
 }
 
 function buildWordRow(w, num, groupKey=''){
@@ -188,6 +205,7 @@ function buildWordRow(w, num, groupKey=''){
   tr.dataset.root  = root  || '—';
   tr.dataset.level = w.level || 1;
   tr.dataset.pos   = mapPos(w.pos);
+  tr.dataset.letter = getInitialLetter(key);
   tr.dataset.en    = (w.en||'').toLowerCase();
   tr.dataset.ru    = (w.ru||'').toLowerCase();
   tr.draggable     = true;
@@ -199,6 +217,7 @@ function buildWordRow(w, num, groupKey=''){
   const arWord = displayAr(key);
   const arEx   = displayAr(w.xa||'');
 
+  const hasRoot = root && root !== '—';
   tr.innerHTML = `
 <td data-col="cb"><input type="checkbox" class="learn-cb"${learned.has(key)?' checked':''}></td>
 <td data-col="fam"><input type="checkbox" class="fam-cb"${fam.has(key)?' checked':''}></td>
@@ -216,7 +235,10 @@ function buildWordRow(w, num, groupKey=''){
     </div>
   </div>
 </td>
-<td data-col="root" class="root-cell">${esc(root||'—')}</td>
+<td data-col="root" class="root-cell">
+  <button class="root-btn" data-root="${esc(root||'')}" ${hasRoot?'':'disabled'}>&#x25C7;</button>
+  <span class="root-text">${esc(hasRoot?root:'—')}</span>
+</td>
 <td data-col="trans" class="trans-cell">
   <span class="trans-en">${esc(w.en||'')}</span>
   <span class="trans-ru">${esc(pickRu(w))}</span>
@@ -249,6 +271,94 @@ function buildSpecialSection(type){
     : '<span class="ui-ru">&#x2605; Знакомые</span><span class="ui-en">&#x2605; Familiar</span>';
   tr.appendChild(td);
   tbl.appendChild(tr);
+}
+
+// ============================================================================
+// Root-family expander
+// - Builds a root → word list index
+// - Renders root family blocks grouped by POS (ism/fi'l/harf)
+// ============================================================================
+function buildRootMap(){
+  rootMap = new Map();
+  allRows.forEach(r=>{
+    const root = (r.root||'').trim();
+    if(!root || root === '—') return;
+    if(!rootMap.has(root)) rootMap.set(root, []);
+    rootMap.get(root).push(r);
+  });
+}
+
+function closeRootFamilies(){
+  $$('.root-family-row').forEach(r=>r.remove());
+  $$('.word-row.root-open').forEach(r=>r.classList.remove('root-open'));
+}
+
+function renderRootFamily(root, rows, currentKey){
+  const byPos = { 'فعل':[], 'اسم':[], 'حرف':[] };
+  rows.forEach(r=>{
+    if(r.tr.style.display === 'none') return;
+    (byPos[r.pos] || byPos['اسم']).push(r);
+  });
+  const order = [
+    {pos:'فعل', cls:'verb', label:{ru:'Глаголы', en:'Verbs'}},
+    {pos:'اسم', cls:'noun', label:{ru:'Существительные', en:'Nouns'}},
+    {pos:'حرف', cls:'part', label:{ru:'Частицы', en:'Particles'}},
+  ];
+  const fmtItem = (r)=>{
+    const w = r.w;
+    const trText = currentLang==='ru' ? (w.ru||w.en||'') : (w.en||w.ru||'');
+    const isCurrent = w.w === currentKey;
+    return `<button class="rf-item${isCurrent?' current':''}" data-word="${esc(w.w)}">
+      <span class="rf-ar">${esc(displayAr(w.w))}</span>
+      <span class="rf-tr">${esc(trText)}</span>
+    </button>`;
+  };
+
+  const groupsHtml = order.map(g=>{
+    const list = byPos[g.pos] || [];
+    if(!list.length) return '';
+    return `<div class="rf-group">
+      <div class="rf-group-title">
+        <span class="rf-pos ${g.cls}">${g.pos}</span>
+        <span class="ui-ru">${g.label.ru}</span><span class="ui-en">${g.label.en}</span>
+        <span style="margin-left:auto;color:var(--text3)">${list.length}</span>
+      </div>
+      <div class="rf-items">${list.map(fmtItem).join('')}</div>
+    </div>`;
+  }).join('');
+
+  return `<div class="root-family">
+    <div class="rf-title">
+      <span class="ui-ru">Корневая семья:</span><span class="ui-en">Root family:</span>
+      <b style="margin-left:6px">${esc(root)}</b>
+    </div>
+    <div class="rf-groups">${groupsHtml || '<span style=\"color:var(--text3);font-size:12px\">No visible words in this root.</span>'}</div>
+  </div>`;
+}
+
+function toggleRootFamily(tr){
+  const root = tr.dataset.root || '';
+  if(!root || root === '—') return;
+  const next = tr.nextElementSibling;
+  if(next && next.classList.contains('root-family-row') && next.dataset.root === root){
+    next.remove();
+    tr.classList.remove('root-open');
+    return;
+  }
+  // Close any open row right after this word
+  if(next && next.classList.contains('root-family-row')) next.remove();
+
+  const rows = rootMap.get(root) || [];
+  if(!rows.length) return;
+  const rfRow = document.createElement('tr');
+  rfRow.className = 'root-family-row';
+  rfRow.dataset.root = root;
+  const td = document.createElement('td');
+  td.colSpan = 7;
+  td.innerHTML = renderRootFamily(root, rows, tr.dataset.key);
+  rfRow.appendChild(td);
+  tr.parentNode.insertBefore(rfRow, tr.nextSibling);
+  tr.classList.add('root-open');
 }
 
 // ============================================================================
@@ -409,10 +519,13 @@ function updatePosVis(){
 // - Triggers renumbering and stats refresh
 // ============================================================================
 function applyFilters(){
+  // close root expansions when filters change (keeps layout consistent)
+  closeRootFamilies();
   allRows.forEach(({tr, tier, pos})=>{
     let show = true;
     if(filterTiers.size && !filterTiers.has(tier)) show = false;
     if(filterPos && pos !== filterPos) show = false;
+    if(filterLetter && tr.dataset.letter !== filterLetter) show = false;
     if(tr.dataset.match === '0') show = false;
     tr.style.display = show ? '' : 'none';
   });
@@ -462,6 +575,7 @@ function setLang(l){
   localStorage.setItem(K.lang, l);
   body.classList.toggle('lang-en', l==='en');
   $$('[data-lang]').forEach(b=>b.classList.toggle('active', b.dataset.lang===l));
+  closeRootFamilies();
 }
 
 // ── Tashkeel ──────────────────────────────────────────────────────────────────
@@ -481,6 +595,7 @@ function setTashkeel(on){
   });
   const btn = $('tashkeel-btn');
   if(btn) btn.classList.toggle('active', on);
+  closeRootFamilies();
 }
 
 // ── Font Prefs ────────────────────────────────────────────────────────────────
@@ -770,6 +885,10 @@ document.addEventListener('DOMContentLoaded', function(){
     const p = (b.dataset.pos||'').trim();
     b.classList.toggle('active', p === filterPos);
   });
+  $$('.letter-filter-btn').forEach(b=>{
+    const l = b.dataset.letter || '';
+    b.classList.toggle('active', !filterLetter && l === '');
+  });
   $$('[data-col-toggle]').forEach(b=>{
     const col = b.dataset.colToggle;
     b.classList.toggle('active', body.classList.contains('hide-'+col));
@@ -795,6 +914,25 @@ document.addEventListener('DOMContentLoaded', function(){
   document.addEventListener('click', e=>{
     const btn = e.target.closest('.tts-btn');
     if(btn) speak(btn.dataset.ar||'', btn);
+  });
+  // Root family expander toggle
+  document.addEventListener('click', e=>{
+    const rb = e.target.closest('.root-btn');
+    if(!rb) return;
+    const tr = rb.closest('tr.word-row'); if(!tr) return;
+    toggleRootFamily(tr);
+  });
+  // Root family item click (jump to word)
+  document.addEventListener('click', e=>{
+    const rf = e.target.closest('.rf-item');
+    if(!rf) return;
+    const word = rf.dataset.word || '';
+    const row = wMap.get(word);
+    if(row){
+      row.scrollIntoView({behavior:'smooth', block:'center'});
+      row.classList.add('flash');
+      setTimeout(()=>row.classList.remove('flash'), 800);
+    }
   });
   // Click on Arabic word to speak
   document.addEventListener('click', e=>{
@@ -844,6 +982,23 @@ document.addEventListener('DOMContentLoaded', function(){
       $$('.tier-filter-btn').forEach(b=>{
         const bt = parseInt(b.dataset.tier)||0;
         b.classList.toggle('active', bt===0 ? filterTiers.size===0 : filterTiers.has(bt));
+      });
+      applyFilters();
+    });
+  });
+
+  // Letter filter buttons (Arabic alphabet)
+  $$('.letter-filter-btn').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      const l = btn.dataset.letter || '';
+      if(!l){
+        filterLetter = '';
+      } else {
+        filterLetter = (filterLetter === l) ? '' : l;
+      }
+      $$('.letter-filter-btn').forEach(b=>{
+        const bl = b.dataset.letter || '';
+        b.classList.toggle('active', (!filterLetter && !bl) || (bl && bl === filterLetter));
       });
       applyFilters();
     });
