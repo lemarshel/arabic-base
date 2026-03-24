@@ -35,7 +35,7 @@ LEIPZIG_URLS = (
     "70c35d6b1fb83635a024751667be0112/raw/"
     "b91875489ccf7eb1ca8270e1138faf1db43952ec/leipzig_urls.json"
 )
-MUSE_URL = "https://dl.fbaipublicfiles.com/arrival/dictionaries/en-ar.txt"
+MUSE_URL = "https://dl.fbaipublicfiles.com/arrival/dictionaries/ar-en.txt"
 
 AR_RE = re.compile(r"[\u0621-\u064A]")
 TASHKEEL_RE = re.compile(r"[\u064B-\u0652\u0670\u0640]")
@@ -180,10 +180,10 @@ def load_muse_dict() -> Dict[str, List[str]]:
     mapping: Dict[str, List[str]] = defaultdict(list)
     with open(muse_path, encoding="utf-8") as f:
         for line in f:
-            parts = line.strip().split()
+            parts = line.strip().split("\t")
             if len(parts) < 2:
                 continue
-            en, ar = parts[0], parts[1]
+            ar, en = parts[0], parts[1]
             ar_norm = normalize_ar(ar)
             if not ar_norm:
                 continue
