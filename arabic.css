@@ -61,7 +61,7 @@ body[data-pal=coral]{ --pal-accent:#ff6b6b; --pal-dark:#d94f4f; --pal-light:#ffe
 
 *{ box-sizing:border-box; margin:0; padding:0; }
 /* RU/EN typography matches hsk-base (system sans) */
-body{ font-family:Arial,'Segoe UI',sans-serif; background:var(--bg); color:var(--text); font-size:14px; }
+body{ font-family:'Segoe UI',Arial,sans-serif; background:var(--bg); color:var(--text); font-size:14px; }
 
 /* ===== Toolbar layout =====
    Row 1: search + stats + theme + palette + language
@@ -372,8 +372,8 @@ body.dark .tts-btn{ background:#1c1e34; border-color:#353754; color:#b3b3c7; }
 /* ===== Translation column (single-language view) ===== */
 /* Translation column */
 .trans-cell{ padding:8px 10px; }
-.trans-en{ display:block; font-size:13px; line-height:1.5; }
-.trans-ru{ display:block; font-size:12px; color:var(--text3); margin-top:2px; line-height:1.5; }
+.trans-en{ display:block; font-size:13px; line-height:1.5; font-family:'Segoe UI',Arial,sans-serif; }
+.trans-ru{ display:block; font-size:12px; color:var(--text3); margin-top:2px; line-height:1.5; font-family:'Segoe UI',Arial,sans-serif; }
 /* Both EN and RU always visible */
 
 /* ===== Example column ===== */
@@ -389,7 +389,7 @@ body.dark .tts-btn{ background:#1c1e34; border-color:#353754; color:#b3b3c7; }
   line-height:1.7; color:var(--text2);
 }
 .ex-ar-line .tts-btn{ width:24px; height:24px; font-size:.8em; margin:0; }
-.ex-tr{ display:block; font-size:11px; color:var(--text3); margin-top:3px; line-height:1.5; }
+.ex-tr{ display:block; font-size:11px; color:var(--text3); margin-top:3px; line-height:1.5; font-family:'Segoe UI',Arial,sans-serif; }
 /* Both ex-en and ex-ru always visible */
 .ex-en{ display:block; }
 .ex-ru{ display:block; color:var(--text3); font-size:11px; }

@@ -416,6 +416,21 @@ function updateStats(){
     if(pctEl) pctEl.textContent = pct+'%';
   });
   updatePosSummary();
+  updateTierSummary();
+}
+
+// ── Tier summary counts (levels 1–7) ────────────────────────────────────────
+function updateTierSummary(){
+  const counts = {1:0,2:0,3:0,4:0,5:0,6:0,7:0};
+  allRows.forEach(r=>{
+    if(r.tr.style.display==='none') return;
+    const t = r.tier || r.level || 1;
+    if(counts[t] !== undefined) counts[t] += 1;
+  });
+  Object.keys(counts).forEach(k=>{
+    const el = document.querySelector(`.tier-chip[data-tier="${k}"] .tc-count`);
+    if(el) el.textContent = counts[k];
+  });
 }
 
 // ── POS summary counts (ism / fi'l / harf) ───────────────────────────────────

@@ -14,7 +14,9 @@ Secondary sources (fallbacks):
   - Cached RU/EN corrections from previous audits
 
 Translation fallback:
-  - OPUS-MT (Helsinki-NLP) English→Russian (only if cache missing)
+  - NLLB-200 (primary, sentence quality)
+  - M2M100 (fallback)
+  - OPUS-MT (lightweight fallback)
 
 Diacritics:
   - CAMeL Tools MLE disambiguator (calima-msa-r13)
@@ -36,7 +38,7 @@ import requests
 from tqdm import tqdm
 
 # wordfreq (kept as optional fallback if deck missing)
-from wordfreq import top_n_list
+from wordfreq import top_n_list, zipf_frequency
 
 # CAMeL Tools
 from camel_tools.data import CATALOGUE
@@ -44,7 +46,7 @@ from camel_tools.disambig.mle import MLEDisambiguator
 from camel_tools.tokenizers.word import simple_word_tokenize
 from camel_tools.utils.dediac import dediac_ar
 
-# Transformers (OPUS-MT)
+# Transformers (NLLB / M2M100 / OPUS-MT)
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 import torch
 torch.set_num_threads(2)
@@ -323,6 +325,38 @@ def load_mt(model_name: str):
     model.eval()
     return tok, model
 
+def load_nllb(model_name: str = "facebook/nllb-200-distilled-600M"):
+    tok = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
+    model.eval()
+    return tok, model
+
+def load_m2m100(model_name: str = "facebook/m2m100_418M"):
+    tok = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
+    model.eval()
+    return tok, model
+
+def translate_nllb(texts: List[str], tok, model, src_lang: str, tgt_lang: str, max_len=256) -> List[str]:
+    if not texts:
+        return []
+    tok.src_lang = src_lang
+    with torch.no_grad():
+        enc = tok(texts, return_tensors="pt", padding=True, truncation=True, max_length=max_len)
+        forced_bos = tok.convert_tokens_to_ids(tgt_lang)
+        gen = model.generate(**enc, forced_bos_token_id=forced_bos, max_new_tokens=128)
+    return tok.batch_decode(gen, skip_special_tokens=True)
+
+def translate_m2m100(texts: List[str], tok, model, src_lang: str, tgt_lang: str, max_len=256) -> List[str]:
+    if not texts:
+        return []
+    tok.src_lang = src_lang
+    with torch.no_grad():
+        enc = tok(texts, return_tensors="pt", padding=True, truncation=True, max_length=max_len)
+        forced_bos = tok.get_lang_id(tgt_lang)
+        gen = model.generate(**enc, forced_bos_token_id=forced_bos, max_new_tokens=128)
+    return tok.batch_decode(gen, skip_special_tokens=True)
+
 
 def translate_batch(texts: List[str], tok, model, max_len=128) -> List[str]:
     if not texts:
@@ -471,18 +505,48 @@ def rebuild():
 
     # 6) MT fallback (EN->RU) only if needed
     use_mt = os.environ.get("AR_USE_MT", "1").lower() not in ("0", "false", "no")
-    tok_en_ru = model_en_ru = None
+    mt_engine = os.environ.get("AR_MT_ENGINE", "AUTO").lower().strip()
+    nllb_tok = nllb_model = None
+    m2m_tok = m2m_model = None
+    opus_tok = opus_model = None
 
-    def ensure_mt():
-        nonlocal tok_en_ru, model_en_ru
-        if tok_en_ru is None or model_en_ru is None:
-            tok_en_ru, model_en_ru = load_mt("Helsinki-NLP/opus-mt-en-ru")
+    def ensure_engine(engine: str):
+        nonlocal nllb_tok, nllb_model, m2m_tok, m2m_model, opus_tok, opus_model
+        if engine == "nllb":
+            if nllb_tok is None or nllb_model is None:
+                nllb_tok, nllb_model = load_nllb()
+        elif engine == "m2m100":
+            if m2m_tok is None or m2m_model is None:
+                m2m_tok, m2m_model = load_m2m100()
+        else:
+            if opus_tok is None or opus_model is None:
+                opus_tok, opus_model = load_mt("Helsinki-NLP/opus-mt-en-ru")
 
-    def maybe_translate_en_ru(texts: List[str]) -> List[str]:
+    def translate_texts(texts: List[str], src: str, tgt: str) -> List[str]:
         if not texts:
             return []
-        ensure_mt()
-        return translate_in_batches(texts, tok_en_ru, model_en_ru, batch_size=32)
+        engine = mt_engine
+        if engine == "auto":
+            # Prefer NLLB, fallback to M2M100, then OPUS
+            try:
+                ensure_engine("nllb")
+                return translate_nllb(texts, nllb_tok, nllb_model, src, tgt)
+            except Exception:
+                try:
+                    ensure_engine("m2m100")
+                    return translate_m2m100(texts, m2m_tok, m2m_model, src.split("_")[0], tgt.split("_")[0])
+                except Exception:
+                    ensure_engine("opus")
+                    return translate_in_batches(texts, opus_tok, opus_model, batch_size=32)
+        elif engine == "nllb":
+            ensure_engine("nllb")
+            return translate_nllb(texts, nllb_tok, nllb_model, src, tgt)
+        elif engine == "m2m100":
+            ensure_engine("m2m100")
+            return translate_m2m100(texts, m2m_tok, m2m_model, src, tgt)
+        else:
+            ensure_engine("opus")
+            return translate_in_batches(texts, opus_tok, opus_model, batch_size=32)
 
     def match_fix_key(word: str, root: str, pos: str) -> str:
         root_letters = normalize_ar(root)
@@ -534,6 +598,12 @@ def rebuild():
         if not ex_ar:
             ex_ar = f"أُحِبُّ {word}."
             ex_en = f"I like {en or 'it'}."
+        # If English example missing, translate from Arabic
+        if not ex_en and use_mt:
+            try:
+                ex_en = translate_texts([ex_ar], "arb_Arab", "eng_Latn")[0]
+            except Exception:
+                ex_en = ""
 
         # De-duplicate example usage
         if ex_ar in used_examples and word in example_map:
@@ -622,13 +692,13 @@ def rebuild():
         if pending_word_en:
             missing = [t for t in pending_word_en if t not in ru_by_en]
             if missing:
-                translated = maybe_translate_en_ru(missing)
+                translated = translate_texts(missing, "eng_Latn", "rus_Cyrl")
                 for src, tgt in zip(missing, translated):
                     ru_by_en[src] = tgt
         if pending_ex_en:
             missing_ex = [t for t in pending_ex_en if t not in ru_by_ex]
             if missing_ex:
-                translated = maybe_translate_en_ru(missing_ex)
+                translated = translate_texts(missing_ex, "eng_Latn", "rus_Cyrl")
                 for src, tgt in zip(missing_ex, translated):
                     ru_by_ex[src] = tgt
 
@@ -645,6 +715,24 @@ def rebuild():
 
     save_cache(CACHE_EN_RU, ru_by_en)
     save_cache(CACHE_DIAC, cache_diac)
+
+    # 10) Re-assign levels by English difficulty (easiest -> hardest)
+    def english_score(en_text: str) -> float:
+        if not en_text:
+            return 0.0
+        first = re.split(r"[;,(\\[]", en_text)[0].strip().lower()
+        first = re.sub(r"^(to|a|an|the)\\s+", "", first)
+        token = re.split(r"\\s+", first)[0]
+        return zipf_frequency(token, "en")
+
+    scored = sorted(entries, key=lambda e: english_score(e.get("en","")), reverse=True)
+    n = len(scored)
+    if n:
+        bucket = max(1, n // 7)
+        for idx, e in enumerate(scored):
+            level = min(7, 1 + (idx // bucket))
+            e["tier"] = level
+            e["level"] = level
 
     # Save
     OUT_WORDS.write_text("const AR_WORDS = " + json.dumps(entries, ensure_ascii=False) + ";", encoding="utf-8")
