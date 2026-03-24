@@ -1,25 +1,25 @@
 {
-  "generated_at": "2026-03-24T19:08:40.701877",
-  "total_words": 4484,
+  "generated_at": "2026-03-24T19:44:53.128906",
+  "total_words": 4500,
   "missing_ru": 0,
   "missing_en": 0,
   "missing_example_ar": 0,
   "missing_example_en": 0,
-  "word_with_diacritics": 4484,
-  "example_with_diacritics": 4484,
-  "ru_fallback_equals_en": 3101,
+  "word_with_diacritics": 4498,
+  "example_with_diacritics": 4500,
+  "ru_fallback_equals_en": 3692,
   "pos_counts": {
-    "اسم": 3942,
-    "فعل": 319,
-    "حرف": 223
+    "حرف": 28,
+    "اسم": 3281,
+    "فعل": 1191
   },
   "level_counts": {
-    "1": 640,
-    "2": 641,
-    "3": 640,
-    "4": 641,
-    "5": 640,
-    "6": 641,
-    "7": 641
+    "1": 642,
+    "2": 643,
+    "3": 643,
+    "4": 643,
+    "5": 643,
+    "6": 643,
+    "7": 643
   }
 }
