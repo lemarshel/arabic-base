@@ -10,4 +10,4 @@ Examples with diacritics: 4484
 RU==EN fallback count: 3101
 
 POS counts: {'اسم': 3942, 'فعل': 319, 'حرف': 223}
-Level counts: {'1': 3773, '2': 171, '3': 105, '4': 201, '5': 234}
+Level counts: {'1': 300, '2': 200, '3': 200, '4': 200, '5': 3584}
