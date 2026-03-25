@@ -669,11 +669,37 @@ def load_master_list(target_n: int) -> List[Dict]:
         for row in reader:
             rows.append(row)
     rows = rows[:target_n] if target_n else rows
+    # Custom level distribution (approx. 4.5k total)
+    level_targets = [500, 700, 700, 700, 650, 650, 600]
+    # Normalize if target_n differs
+    if target_n and sum(level_targets) != target_n:
+        # scale proportionally and adjust to exact target_n
+        scale = target_n / sum(level_targets)
+        level_targets = [max(1, int(round(n * scale))) for n in level_targets]
+        # fix rounding drift
+        diff = target_n - sum(level_targets)
+        i = 0
+        while diff != 0:
+            level_targets[i % len(level_targets)] += 1 if diff > 0 else -1
+            diff += -1 if diff > 0 else 1
+            i += 1
+    # Build cumulative cutoffs
+    cutoffs = []
+    acc = 0
+    for n in level_targets:
+        acc += n
+        cutoffs.append(acc)
     out = []
     for i, r in enumerate(rows):
         word = (r.get("arabic_lemma") or "").strip()
         if not word or not is_arabic_word(word):
             continue
+        # Determine level by cumulative cutoffs
+        lvl = 1
+        for idx, c in enumerate(cutoffs, start=1):
+            if i < c:
+                lvl = idx
+                break
         out.append({
             "w": word,
             "r": (r.get("root_if_relevant") or "").strip(),
@@ -683,8 +709,8 @@ def load_master_list(target_n: int) -> List[Dict]:
             "xa": "",
             "xe": "",
             "xr": "",
-            "tier": 1 + (i // max(1, target_n // 7)),
-            "level": 1 + (i // max(1, target_n // 7)),
+            "tier": lvl,
+            "level": lvl,
             "pos": (r.get("part_of_speech") or "").strip()
         })
     return out

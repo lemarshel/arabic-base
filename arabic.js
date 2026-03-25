@@ -157,17 +157,27 @@ function esc(s){
 // ── Build Table ───────────────────────────────────────────────────────────────
 function buildTable(){
   const tbl = $('vocab-table');
-  const POS_ORDER = ['اسم','فعل','حرف'];
+  const POS_ORDER = ['اسم','فعل','صفة','ظرف','ضمير','علم','عدد','حرف'];
   const POS_LABELS = {
-    'اسم':   {ar:'اسْم',   en:'Nouns',      ru:'Существительные'},
-    'فعل':   {ar:'فِعْل',  en:'Verbs',      ru:'Глаголы'},
-    'حرف':   {ar:'حَرْف',  en:'Particles',  ru:'Частицы'}
+    'اسم':   {ar:'اسْم',   en:'Nouns',         ru:'Существительные'},
+    'فعل':   {ar:'فِعْل',  en:'Verbs',         ru:'Глаголы'},
+    'صفة':   {ar:'صِفَة',  en:'Adjectives',    ru:'Прилагательные'},
+    'ظرف':   {ar:'ظَرْف',  en:'Adverbs',       ru:'Наречия'},
+    'ضمير':  {ar:'ضَمِير', en:'Pronouns',      ru:'Местоимения'},
+    'علم':   {ar:'عَلَم',  en:'Proper Nouns',  ru:'Имена собственные'},
+    'عدد':   {ar:'عَدَد',  en:'Numbers',       ru:'Числа'},
+    'حرف':   {ar:'حَرْف',  en:'Particles',     ru:'Частицы'}
   };
 
   const mapPos = (p)=>{
     p=(p||'').trim();
     if(!p) return 'اسم';
     if(p.indexOf('فعل')!==-1) return 'فعل';
+    if(p.indexOf('صفة')!==-1) return 'صفة';
+    if(p.indexOf('ظرف')!==-1) return 'ظرف';
+    if(p.indexOf('ضمير')!==-1) return 'ضمير';
+    if(p.indexOf('علم')!==-1) return 'علم';
+    if(p.indexOf('عدد')!==-1) return 'عدد';
     if(p.indexOf('حرف')!==-1 || p.indexOf('أداة')!==-1) return 'حرف';
     return 'اسم';
   };
@@ -433,9 +443,9 @@ function updateTierSummary(){
   });
 }
 
-// ── POS summary counts (ism / fi'l / harf) ───────────────────────────────────
+// ── POS summary counts ───────────────────────────────────────────────────────
 function updatePosSummary(){
-  const counts = { '':0, 'اسم':0, 'فعل':0, 'حرف':0 };
+  const counts = { '':0, 'اسم':0, 'فعل':0, 'صفة':0, 'ظرف':0, 'ضمير':0, 'علم':0, 'عدد':0, 'حرف':0 };
   allRows.forEach(r=>{
     if(r.tr.style.display==='none') return;
     counts['']++;
@@ -445,6 +455,11 @@ function updatePosSummary(){
   set('pos-count-all', counts['']);
   set('pos-count-noun', counts['اسم']);
   set('pos-count-verb', counts['فعل']);
+  set('pos-count-adj', counts['صفة']);
+  set('pos-count-adv', counts['ظرف']);
+  set('pos-count-pron', counts['ضمير']);
+  set('pos-count-prop', counts['علم']);
+  set('pos-count-num', counts['عدد']);
   set('pos-count-part', counts['حرف']);
   updateSubposSummary();
 }
