@@ -136,6 +136,8 @@ MANUAL_GLOSS_RAW = {
     "أو": "or",
     "و": "and",
     "أم": "or (choice)",
+    "أن": "that; to",
+    "إن": "indeed; that",
     "كل": "all; every",
     "أي": "which; any",
     "هو": "he",
@@ -225,6 +227,26 @@ def limit_gloss(gloss: str, max_parts: int = 2) -> str:
         return gloss.strip()
     return "; ".join(parts[:max_parts])
 
+BAD_GLOSS_PATTERNS = [
+    "verbal noun of", "plural of", "feminine of", "masculine of", "inflection of",
+    "alternative spelling", "alternative form", "romanization of", "transliteration of",
+    "letter of the arabic alphabet", "the second letter", "the first letter",
+    "comparative of", "superlative of", "diminutive of", "form", "conjugation of",
+    "case of", "accusative", "genitive", "nominative", "definite form", "indefinite form",
+]
+
+def clean_gloss(gloss: str) -> str:
+    g = (gloss or "").strip()
+    if not g:
+        return ""
+    gl = g.lower()
+    if any(pat in gl for pat in BAD_GLOSS_PATTERNS):
+        return ""
+    # strip parenthetical notes and wiki-style noise
+    g = re.sub(r"\([^)]*\)", "", g)
+    g = re.sub(r"\s{2,}", " ", g).strip()
+    return limit_gloss(g)
+
 def clean_root(root: str) -> str:
     r = strip_tashkeel(root or "")
     r = re.sub(r"[^\u0621-\u064A]", "", r)
@@ -272,6 +294,39 @@ def strip_prefixes(tok: str) -> List[str]:
         if tok.startswith(p) and len(tok) > len(p) + 1:
             variants.add(tok[len(p):])
     return list(variants)
+
+EX_MIN_LEN = 6
+EX_MAX_LEN = 120
+EX_MAX_TOKENS = 16
+
+def contains_lemma(sentence: str, lemma: str) -> bool:
+    if not sentence or not lemma:
+        return False
+    lemma_norm = normalize_token(lemma)
+    tokens = [normalize_token(t) for t in simple_word_tokenize(sentence) if is_arabic_word(t)]
+    for tok in tokens:
+        if tok == lemma_norm:
+            return True
+        if lemma_norm in strip_prefixes(tok):
+            return True
+    return False
+
+def is_good_example(text: str) -> bool:
+    if not text:
+        return False
+    if len(text) < EX_MIN_LEN or len(text) > EX_MAX_LEN:
+        return False
+    if re.search(r"[A-Za-z0-9]", text):
+        return False
+    # avoid multi-sentence or quote-heavy lines
+    if text.count(".") + text.count("؟") + text.count("!") > 1:
+        return False
+    if any(ch in text for ch in ['"', "«", "»", "“", "”"]):
+        return False
+    tokens = [t for t in simple_word_tokenize(text) if is_arabic_word(t)]
+    if len(tokens) < 2 or len(tokens) > EX_MAX_TOKENS:
+        return False
+    return True
 
 
 def download_file(url: str, dst: Path):
@@ -335,7 +390,7 @@ def build_kaikki_glosses(target_words: List[str]) -> Dict[str, Dict[str, str]]:
                             glosses.append(w)
                 if len(glosses) >= 4:
                     break
-            gloss = limit_gloss("; ".join(glosses))
+            gloss = clean_gloss("; ".join(glosses))
             pos = (data.get("pos") or "").strip().lower()
             diac = word if has_tashkeel(word) else ""
             existing = out.get(norm)
@@ -387,6 +442,7 @@ def build_tatoeba_examples(target_words: List[str],
     ar_map: Dict[str, str] = {}
     word_to_arid: Dict[str, str] = {}
     ar_needed = set()
+    used_ar = set()
 
     # Pass 1: Arabic sentences (limited by Arabic count, not line count)
     ara_count = 0
@@ -401,6 +457,8 @@ def build_tatoeba_examples(target_words: List[str],
             ara_count += 1
             if ara_count > max_sentences:
                 break
+            if not is_good_example(text):
+                continue
             tokens = [normalize_token(t) for t in simple_word_tokenize(text) if is_arabic_word(t)]
             uniq = set()
             for tok in tokens:
@@ -409,7 +467,13 @@ def build_tatoeba_examples(target_words: List[str],
             hit = False
             for tok in uniq:
                 if tok in wanted and tok not in word_to_arid:
+                    # ensure lemma appears (or clitic-stripped variant)
+                    if not contains_lemma(text, targets[tok]):
+                        continue
+                    if text in used_ar:
+                        continue
                     word_to_arid[tok] = sid
+                    used_ar.add(text)
                     hit = True
             if hit:
                 ar_map[sid] = text
@@ -778,11 +842,11 @@ def rebuild():
 
         # English gloss (manual → Kaikki → master list → cache)
         manual_gloss = MANUAL_GLOSS.get(normalize_ar(word), "")
-        en = manual_gloss or limit_gloss(km.get("gloss") or "")
+        en = manual_gloss or clean_gloss(km.get("gloss") or "")
         if not en:
-            en = limit_gloss(base.get("en") or "")
+            en = clean_gloss(base.get("en") or "")
         if not en:
-            en = limit_gloss(en_by_word_norm.get(normalize_ar(word), ""))
+            en = clean_gloss(en_by_word_norm.get(normalize_ar(word), ""))
 
         # Example sentences
         ex_ar = (base.get("xa") or "").strip()
@@ -793,11 +857,13 @@ def rebuild():
 
         # Ensure example contains word; fallback to Tatoeba
         if ex_ar:
-            if normalize_token(word) not in normalize_token(ex_ar):
+            if (not contains_lemma(ex_ar, word)) or (not is_good_example(ex_ar)):
                 ex_ar = ""
                 ex_en = ""
         if not ex_ar and word in example_map:
-            ex_ar, ex_en = example_map[word]
+            cand_ar, cand_en = example_map[word]
+            if is_good_example(cand_ar) and contains_lemma(cand_ar, word):
+                ex_ar, ex_en = cand_ar, cand_en
 
         # Fallback template if still empty (simple, readable, and word-containing)
         if not ex_ar:
@@ -808,8 +874,8 @@ def rebuild():
                 ex_ar = f"هذا {word}."
                 ex_en = f"This is {en or 'a thing'}."
             else:
-                ex_ar = f"هذه جملة فيها {word}."
-                ex_en = f"This sentence contains {en or 'the word'}."
+                ex_ar = f"تُسْتَخْدَمُ الأداةُ {word} هُنَا."
+                ex_en = f"The particle {en or 'this word'} is used here."
         # If English example missing, translate from Arabic
         if not ex_en and use_mt:
             try:
