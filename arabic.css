@@ -5,6 +5,7 @@
    - Section headers throughout keep the file maintainable
    ========================================================================== */
 /* OUR_ARABIC_v3 — Redesigned Stylesheet */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Noto+Naskh+Arabic:wght@400;600;700&display=swap');
 /* ===== Base color tokens (light theme) ===== */
 :root{
   --pal-accent:#e94560; --pal-dark:#c73652; --pal-light:#fde8ec;
@@ -61,7 +62,7 @@ body[data-pal=coral]{ --pal-accent:#ff6b6b; --pal-dark:#d94f4f; --pal-light:#ffe
 
 *{ box-sizing:border-box; margin:0; padding:0; }
 /* RU/EN typography matches hsk-base (system sans) */
-body{ font-family:'Segoe UI',Arial,sans-serif; background:var(--bg); color:var(--text); font-size:14px; }
+body{ font-family:'Inter','Segoe UI',Arial,sans-serif; background:var(--bg); color:var(--text); font-size:14px; }
 
 /* ===== Toolbar layout =====
    Row 1: search + stats + theme + palette + language

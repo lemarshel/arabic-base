@@ -247,6 +247,13 @@ def clean_gloss(gloss: str) -> str:
     g = re.sub(r"\s{2,}", " ", g).strip()
     return limit_gloss(g)
 
+def english_head(en: str) -> str:
+    if not en:
+        return ""
+    head = re.split(r"[;,/]", en)[0].strip()
+    head = re.split(r"\s+", head)[0].strip()
+    return head.lower()
+
 def clean_root(root: str) -> str:
     r = strip_tashkeel(root or "")
     r = re.sub(r"[^\u0621-\u064A]", "", r)
@@ -327,6 +334,51 @@ def is_good_example(text: str) -> bool:
     if len(tokens) < 2 or len(tokens) > EX_MAX_TOKENS:
         return False
     return True
+
+def pick_template(word: str, pos: str) -> Tuple[str, str]:
+    """Deterministic template selection to reduce repetition."""
+    templates = {
+        "فعل": [
+            ("أنا {w} الآن.", "I {en} now."),
+            ("هو {w} كل يوم.", "He {en} every day."),
+            ("نحن {w} معًا.", "We {en} together."),
+            ("سوف {w} غدًا.", "I will {en} tomorrow.")
+        ],
+        "اسم": [
+            ("هذا {w}.", "This is {en}."),
+            ("هذه {w}.", "This is {en}."),
+            ("أحتاج إلى {w}.", "I need {en}."),
+            ("أحب {w}.", "I like {en}."),
+            ("رأيت {w} اليوم.", "I saw {en} today.")
+        ],
+        "صفة": [
+            ("هذا الشيء {w}.", "This thing is {en}."),
+            ("اليوم الجوّ {w}.", "The weather is {en} today.")
+        ],
+        "ظرف": [
+            ("وصلتُ {w}.", "I arrived {en}."),
+            ("أعمل {w}.", "I work {en}.")
+        ],
+        "ضمير": [
+            ("{w} هنا.", "{en} is here."),
+            ("أعرف {w}.", "I know {en}.")
+        ],
+        "علم": [
+            ("هذا {w}.", "This is {en}."),
+            ("قابلتُ {w}.", "I met {en}.")
+        ],
+        "عدد": [
+            ("عددها {w}.", "Its number is {en}."),
+            ("{w} أشخاص.", "{en} people.")
+        ],
+        "حرف": [
+            ("تُسْتَخْدَمُ الأداةُ {w} هنا.", "The particle {en} is used here."),
+            ("الجملةُ فيها {w}.", "The sentence contains {en}.")
+        ]
+    }
+    lst = templates.get(pos, templates["اسم"])
+    idx = abs(hash(word)) % len(lst)
+    return lst[idx]
 
 
 def download_file(url: str, dst: Path):
@@ -585,6 +637,20 @@ def translate_m2m100(texts: List[str], tok, model, src_lang: str, tgt_lang: str,
         gen = model.generate(**enc, forced_bos_token_id=forced_bos, max_new_tokens=128)
     return tok.batch_decode(gen, skip_special_tokens=True)
 
+def translate_nllb_in_batches(texts: List[str], tok, model, src_lang: str, tgt_lang: str, batch_size=16, max_len=256) -> List[str]:
+    out = []
+    for i in tqdm(range(0, len(texts), batch_size), desc="translate", unit="batch"):
+        chunk = texts[i:i+batch_size]
+        out.extend(translate_nllb(chunk, tok, model, src_lang, tgt_lang, max_len=max_len))
+    return out
+
+def translate_m2m100_in_batches(texts: List[str], tok, model, src_lang: str, tgt_lang: str, batch_size=16, max_len=256) -> List[str]:
+    out = []
+    for i in tqdm(range(0, len(texts), batch_size), desc="translate", unit="batch"):
+        chunk = texts[i:i+batch_size]
+        out.extend(translate_m2m100(chunk, tok, model, src_lang, tgt_lang, max_len=max_len))
+    return out
+
 
 def translate_batch(texts: List[str], tok, model, max_len=128) -> List[str]:
     if not texts:
@@ -763,6 +829,7 @@ def rebuild():
     en_by_word = load_json_any([SRC_DIR / "cache_en.json", CACHE_EN_WORD_FALLBACK])
     ru_by_en   = load_json_any([SRC_DIR / "cache_word_ru.json", CACHE_RU_BY_EN_FALLBACK])
     ru_by_ex   = load_json_any([SRC_DIR / "cache_example_ru.json", CACHE_EX_RU_FALLBACK])
+    ex_en_by_ar = {}
     chatgpt_fix = load_json_any([SRC_DIR / "cache_chatgpt_fix.json", CACHE_CHATGPT_FIX_FALLBACK])
 
     # normalize cache keys
@@ -776,6 +843,9 @@ def rebuild():
     # 6) MT fallback (EN->RU) only if needed
     use_mt = os.environ.get("AR_USE_MT", "1").lower() not in ("0", "false", "no")
     mt_engine = os.environ.get("AR_MT_ENGINE", "AUTO").lower().strip()
+    force_mt_en = os.environ.get("AR_FORCE_MT_EN", "0").lower() in ("1","true","yes")
+    force_mt_ru = os.environ.get("AR_FORCE_MT_RU", "0").lower() in ("1","true","yes")
+    force_mt_ex = os.environ.get("AR_FORCE_MT_EX", "0").lower() in ("1","true","yes")
     nllb_tok = nllb_model = None
     m2m_tok = m2m_model = None
     opus_ar_en_tok = opus_ar_en_model = None
@@ -796,6 +866,8 @@ def rebuild():
             if opus_en_ru_tok is None or opus_en_ru_model is None:
                 opus_en_ru_tok, opus_en_ru_model = load_mt("Helsinki-NLP/opus-mt-en-ru")
 
+    mt_batch = int(os.environ.get("AR_MT_BATCH", "16"))
+
     def translate_texts(texts: List[str], src: str, tgt: str) -> List[str]:
         if not texts:
             return []
@@ -804,11 +876,11 @@ def rebuild():
             # Prefer NLLB, fallback to M2M100, then OPUS
             try:
                 ensure_engine("nllb")
-                return translate_nllb(texts, nllb_tok, nllb_model, src, tgt)
+                return translate_nllb_in_batches(texts, nllb_tok, nllb_model, src, tgt, batch_size=mt_batch)
             except Exception:
                 try:
                     ensure_engine("m2m100")
-                    return translate_m2m100(texts, m2m_tok, m2m_model, src.split("_")[0], tgt.split("_")[0])
+                    return translate_m2m100_in_batches(texts, m2m_tok, m2m_model, src.split("_")[0], tgt.split("_")[0], batch_size=mt_batch)
                 except Exception:
                     ensure_engine("opus")
                     # OPUS fallback by direction
@@ -819,10 +891,10 @@ def rebuild():
                     return translate_in_batches(texts, opus_en_ru_tok, opus_en_ru_model, batch_size=32)
         elif engine == "nllb":
             ensure_engine("nllb")
-            return translate_nllb(texts, nllb_tok, nllb_model, src, tgt)
+            return translate_nllb_in_batches(texts, nllb_tok, nllb_model, src, tgt, batch_size=mt_batch)
         elif engine == "m2m100":
             ensure_engine("m2m100")
-            return translate_m2m100(texts, m2m_tok, m2m_model, src.split("_")[0], tgt.split("_")[0])
+            return translate_m2m100_in_batches(texts, m2m_tok, m2m_model, src.split("_")[0], tgt.split("_")[0], batch_size=mt_batch)
         else:
             ensure_engine("opus")
             if src.startswith("arb") and tgt.startswith("eng"):
@@ -840,7 +912,11 @@ def rebuild():
     entries = []
     used_examples = set()
     pending_word_en = set()
+    pending_word_ar_en = set()
+    pending_word_ar_ru = set()
     pending_ex_en = set()
+    pending_ex_ar_en = set()
+    pending_ex_ar_ru = set()
 
     for i, base in enumerate(base_entries):
         word = (base.get("w") or "").strip()
@@ -856,9 +932,20 @@ def rebuild():
         norm_word = normalize_ar(word)
         if norm_word in MANUAL_POS_HARF:
             pos = "حرف"
-        elif "فعل" in pos_raw or pos_raw.startswith("verb"):
+        elif pos_raw.startswith("verb") or "فعل" in pos_raw:
             pos = "فعل"
-        elif pos_raw in {"conjunction", "conj", "preposition", "prep", "adp", "particle", "part",
+        elif pos_raw.startswith("adj"):
+            pos = "صفة"
+        elif pos_raw.startswith("adv"):
+            pos = "ظرف"
+        elif pos_raw.startswith("pron"):
+            pos = "ضمير"
+        elif pos_raw in {"noun_prop"}:
+            pos = "علم"
+        elif pos_raw in {"num", "number"}:
+            pos = "عدد"
+        elif pos_raw in {"conjunction", "conj", "conj_sub", "preposition", "prep", "adp", "particle",
+                         "part", "part_neg", "part_interrog", "part_focus", "part_verb", "part_voc",
                          "interjection", "det", "determiner"}:
             pos = "حرف"
         elif "حرف" in pos_raw:
@@ -866,17 +953,19 @@ def rebuild():
         else:
             pos = "اسم"
 
-        # English gloss (manual → Kaikki → master list → cache)
+        # English gloss (manual → Kaikki → master list → cache → MT)
         manual_gloss = MANUAL_GLOSS.get(normalize_ar(word), "")
-        en = manual_gloss or clean_gloss(km.get("gloss") or "")
-        if not en:
+        en = "" if force_mt_en else (manual_gloss or clean_gloss(km.get("gloss") or ""))
+        if not en and not force_mt_en:
             en = clean_gloss(base.get("en") or "")
-        if not en:
+        if not en and not force_mt_en:
             en = clean_gloss(en_by_word_norm.get(normalize_ar(word), ""))
+        if not en and use_mt:
+            pending_word_ar_en.add(word)
 
         # Example sentences
         ex_ar = (base.get("xa") or "").strip()
-        ex_en = (base.get("xe") or "").strip()
+        ex_en = "" if force_mt_ex else (base.get("xe") or "").strip()
         manual_ex = MANUAL_EXAMPLES.get(normalize_ar(word))
         if manual_ex:
             ex_ar, ex_en = manual_ex
@@ -893,21 +982,12 @@ def rebuild():
 
         # Fallback template if still empty (simple, readable, and word-containing)
         if not ex_ar:
-            if pos == "فعل":
-                ex_ar = f"هُوَ {word}."
-                ex_en = f"He {en or 'did it'}."
-            elif pos == "اسم":
-                ex_ar = f"هذا {word}."
-                ex_en = f"This is {en or 'a thing'}."
-            else:
-                ex_ar = f"تُسْتَخْدَمُ الأداةُ {word} هُنَا."
-                ex_en = f"The particle {en or 'this word'} is used here."
+            tpl_ar, tpl_en = pick_template(word, pos)
+            ex_ar = tpl_ar.format(w=word)
+            ex_en = tpl_en.format(en=en or "a thing")
         # If English example missing, translate from Arabic
-        if not ex_en and use_mt:
-            try:
-                ex_en = translate_texts([ex_ar], "arb_Arab", "eng_Latn")[0]
-            except Exception:
-                ex_en = ""
+        if (not ex_en or force_mt_ex) and use_mt:
+            pending_ex_ar_en.add(ex_ar)
 
         # De-duplicate example usage
         if ex_ar in used_examples and word in example_map:
@@ -943,25 +1023,29 @@ def rebuild():
 
         # Russian translations
         norm_word = normalize_ar(word)
-        ru = RU_WORD_OVERRIDES.get(norm_word, "") or ru_by_word_norm.get(norm_word, "")
+        ru = "" if force_mt_ru else (RU_WORD_OVERRIDES.get(norm_word, "") or ru_by_word_norm.get(norm_word, ""))
         if not ru:
             ru = ru_by_en.get(en, "")
         # if non-cyrillic or junk, re-translate later
         if ru and (not CYR_RE.search(ru) or "<" in ru or "&lt" in ru):
             ru = ""
-        if not ru and en:
+        if not ru and en and not force_mt_ru:
             # manual overrides first
             if en in RU_OVERRIDES:
                 ru = RU_OVERRIDES[en]
             else:
                 pending_word_en.add(en)
+        if not ru and use_mt:
+            pending_word_ar_ru.add(word)
         ru = limit_gloss(ru)
 
-        ex_ru = ru_by_ex.get(ex_en, "")
+        ex_ru = "" if force_mt_ex else ru_by_ex.get(ex_en, "")
         if ex_ru and (not CYR_RE.search(ex_ru) or "<" in ex_ru or "&lt" in ex_ru):
             ex_ru = ""
-        if not ex_ru and ex_en:
+        if not ex_ru and ex_en and not force_mt_ex:
             pending_ex_en.add(ex_en)
+        if not ex_ru and use_mt:
+            pending_ex_ar_ru.add(ex_ar)
 
         # ChatGPT fixes (optional overrides)
         fix_key = match_fix_key(word, root, pos)
@@ -995,14 +1079,42 @@ def rebuild():
         }
         entries.append(entry)
 
-    # 8) MT fallback in batches (only for missing)
+    # 8) MT translation in batches (missing or forced)
     if use_mt:
+        if pending_word_ar_en:
+            missing_ar = [t for t in pending_word_ar_en if t]
+            if missing_ar:
+                translated = translate_texts(missing_ar, "arb_Arab", "eng_Latn")
+                for src, tgt in zip(missing_ar, translated):
+                    if tgt:
+                        en_by_word_norm[normalize_ar(src)] = clean_gloss(tgt)
+        if pending_word_ar_ru:
+            missing_ar = [t for t in pending_word_ar_ru if t]
+            if missing_ar:
+                translated = translate_texts(missing_ar, "arb_Arab", "rus_Cyrl")
+                for src, tgt in zip(missing_ar, translated):
+                    if tgt and CYR_RE.search(tgt):
+                        ru_by_word_norm[normalize_ar(src)] = limit_gloss(tgt)
         if pending_word_en:
             missing = [t for t in pending_word_en if t not in ru_by_en]
             if missing:
                 translated = translate_texts(missing, "eng_Latn", "rus_Cyrl")
                 for src, tgt in zip(missing, translated):
-                    ru_by_en[src] = tgt
+                    ru_by_en[src] = limit_gloss(tgt)
+        if pending_ex_ar_en:
+            missing_ar = [t for t in pending_ex_ar_en if t]
+            if missing_ar:
+                translated = translate_texts(missing_ar, "arb_Arab", "eng_Latn")
+                for src, tgt in zip(missing_ar, translated):
+                    if tgt:
+                        ex_en_by_ar[src] = tgt
+        if pending_ex_ar_ru:
+            missing_ar = [t for t in pending_ex_ar_ru if t]
+            if missing_ar:
+                translated = translate_texts(missing_ar, "arb_Arab", "rus_Cyrl")
+                for src, tgt in zip(missing_ar, translated):
+                    if tgt and CYR_RE.search(tgt):
+                        ru_by_ex[src] = tgt
         if pending_ex_en:
             missing_ex = [t for t in pending_ex_en if t not in ru_by_ex]
             if missing_ex:
@@ -1010,16 +1122,25 @@ def rebuild():
                 for src, tgt in zip(missing_ex, translated):
                     ru_by_ex[src] = tgt
 
-    # 9) Fill missing RU strings now that caches are updated
+    # 9) Fill missing EN/RU strings now that caches are updated
     for e in entries:
+        if not (e.get("en") or "").strip():
+            en_val = en_by_word_norm.get(normalize_ar(e.get("w","")), "")
+            e["en"] = clean_gloss(en_val)
         if not (e.get("ru") or "").strip():
             en_val = e.get("en","")
             ru_val = RU_OVERRIDES.get(en_val, ru_by_en.get(en_val, ""))
             if ru_val and (not CYR_RE.search(ru_val) or "<" in ru_val or "&lt" in ru_val):
                 ru_val = ""
             e["ru"] = limit_gloss(ru_val)
+        if not (e.get("xe") or "").strip():
+            ex_ar = e.get("xa","")
+            if ex_ar in ex_en_by_ar:
+                e["xe"] = ex_en_by_ar[ex_ar]
         if not (e.get("xr") or "").strip():
-            e["xr"] = ru_by_ex.get(e.get("xe",""), "")
+            ex_ar = e.get("xa","")
+            ex_en = e.get("xe","")
+            e["xr"] = ru_by_ex.get(ex_ar, "") or ru_by_ex.get(ex_en, "")
 
     save_cache(CACHE_EN_RU, ru_by_en)
     save_cache(CACHE_DIAC, cache_diac)
@@ -1028,19 +1149,36 @@ def rebuild():
     def english_score(en_text: str) -> float:
         if not en_text:
             return 0.0
-        first = re.split(r"[;,(\\[]", en_text)[0].strip().lower()
-        first = re.sub(r"^(to|a|an|the)\\s+", "", first)
-        token = re.split(r"\\s+", first)[0]
+        token = english_head(en_text)
+        if not token:
+            return 0.0
         return zipf_frequency(token, "en")
 
     scored = sorted(entries, key=lambda e: english_score(e.get("en","")), reverse=True)
     n = len(scored)
-    if n:
-        bucket = max(1, n // 7)
-        for idx, e in enumerate(scored):
-            level = min(7, 1 + (idx // bucket))
-            e["tier"] = level
-            e["level"] = level
+    level_targets = [500, 700, 700, 700, 650, 650, 600]
+    if n and sum(level_targets) != n:
+        scale = n / sum(level_targets)
+        level_targets = [max(1, int(round(x*scale))) for x in level_targets]
+        diff = n - sum(level_targets)
+        i = 0
+        while diff != 0:
+            level_targets[i % len(level_targets)] += 1 if diff > 0 else -1
+            diff += -1 if diff > 0 else 1
+            i += 1
+    cutoffs = []
+    acc = 0
+    for t in level_targets:
+        acc += t
+        cutoffs.append(acc)
+    for idx, e in enumerate(scored):
+        level = 1
+        for j, c in enumerate(cutoffs, start=1):
+            if idx < c:
+                level = j
+                break
+        e["tier"] = level
+        e["level"] = level
 
     # Save
     OUT_WORDS.write_text("const AR_WORDS = " + json.dumps(entries, ensure_ascii=False) + ";", encoding="utf-8")
