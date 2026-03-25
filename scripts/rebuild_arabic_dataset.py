@@ -1,32 +1,33 @@
 """
-Arabic Base — Rebuild Pipeline (sources + translations + examples)
------------------------------------------------------------------
+Arabic Base — Rebuild Pipeline (master list + translations + examples)
+---------------------------------------------------------------------
 Goal:
   - Replace weak translations and repetitive examples
   - Ensure full Arabic harakat (diacritics) on words + examples
   - Use higher-quality sources and structured audits
 
 Primary source:
-  - arabic_decks_arabic.json (high-quality word list with EN + examples)
+  - data/arabic_master_list.csv (lemma-based 4.5k list)
 
-Secondary sources (fallbacks):
+Secondary sources:
+  - Kaikki.org Arabic Wiktionary dump (glosses + POS hints)
   - Tatoeba (Arabic examples + English translations, CC-BY)
-  - Cached RU/EN corrections from previous audits
 
 Translation fallback:
-  - NLLB-200 (primary, sentence quality)
-  - M2M100 (fallback)
-  - OPUS-MT (lightweight fallback)
+  - OPUS-MT (ar→en, en→ru)
+  - NLLB / M2M100 (optional, heavier)
 
 Diacritics:
   - CAMeL Tools MLE disambiguator (calima-msa-r13)
 
 Outputs:
   - words.js (AR_WORDS)
+  - data/arabic_master_list_enriched.csv (optional)
 """
 
 from __future__ import annotations
 
+import csv
 import json
 import os
 import re
@@ -56,6 +57,11 @@ BASE = Path(r"C:\Users\hp\arabic-base")
 OUT_WORDS = BASE / "words.js"
 SRC_DIR = BASE / "data_sources"
 SRC_DIR.mkdir(parents=True, exist_ok=True)
+MASTER_LIST_CSV = BASE / "data" / "arabic_master_list.csv"
+MASTER_LIST_ENRICHED = BASE / "data" / "arabic_master_list_enriched.csv"
+
+KAIKKI_JSONL = SRC_DIR / "kaikki_arabic.jsonl"
+KAIKKI_URL = "https://kaikki.org/dictionary/Arabic/kaikki.org-dictionary-Arabic.jsonl"
 
 TATOEBA_SENT = SRC_DIR / "sentences.csv"
 TATOEBA_LINKS = SRC_DIR / "links.csv"
@@ -67,7 +73,7 @@ CACHE_DIAC = SRC_DIR / "diac_cache.json"
 CACHE_EN_RU = SRC_DIR / "en_ru_cache.json"
 CACHE_AR_EN = SRC_DIR / "ar_en_cache.json"
 
-# Primary deck source (preferred)
+# Legacy deck source (optional fallback)
 DECK_JSON = SRC_DIR / "arabic_decks_arabic.json"
 DECK_JSON_FALLBACK = Path(r"C:\Users\hp\Downloads\arabic_decks_arabic.json")
 
@@ -88,6 +94,7 @@ CYR_RE = re.compile(r"[\u0400-\u04FF]")
 TASHKEEL_RE = re.compile(r"[\u064B-\u0652\u0670\u0640]")
 
 
+
 def normalize_ar(s: str) -> str:
     s = dediac_ar(s or "").strip()
     s = re.sub(r"[أإآٱ]", "ا", s)
@@ -96,6 +103,102 @@ def normalize_ar(s: str) -> str:
     s = re.sub(r"ئ", "ي", s)
     s = re.sub(r"ة", "ه", s)
     return re.sub(r"\s+", " ", s)
+
+# Short manual glosses for function words (override when present)
+MANUAL_GLOSS_RAW = {
+    "في": "in",
+    "من": "from",
+    "على": "on",
+    "إلى": "to",
+    "عن": "about",
+    "مع": "with",
+    "حتى": "until",
+    "إلا": "except",
+    "حيث": "where",
+    "منذ": "since",
+    "هذا": "this",
+    "هذه": "this",
+    "ذلك": "that",
+    "تلك": "that",
+    "الذي": "who/that",
+    "التي": "who/that",
+    "ما": "what/that",
+    "لا": "no; not",
+    "بل": "but; rather",
+    "قد": "already; has",
+    "كان": "was",
+    "ليس": "is not",
+    "لم": "did not",
+    "لن": "will not",
+    "سوف": "will",
+    "ثم": "then",
+    "إذا": "if; when",
+    "أو": "or",
+    "و": "and",
+    "أم": "or (choice)",
+    "كل": "all; every",
+    "أي": "which; any",
+    "هو": "he",
+    "هي": "she",
+    "هم": "they",
+    "نحن": "we",
+    "أنت": "you",
+    "أنا": "I",
+    "هنا": "here",
+    "هناك": "there",
+    "الآن": "now",
+    "بعد": "after",
+    "قبل": "before",
+    "فوق": "above",
+    "تحت": "under",
+    "بين": "between",
+    "عند": "at",
+    "لدى": "at; with",
+    "بدون": "without",
+    "نعم": "yes",
+    "ربما": "maybe",
+    "لأن": "because",
+    "لكن": "but",
+    "إذ": "when; since",
+    "كي": "so that",
+    "لعل": "perhaps",
+    "يا": "O! (vocative)",
+    "ل": "to; for",
+}
+MANUAL_GLOSS = {normalize_ar(k): v for k, v in MANUAL_GLOSS_RAW.items()}
+
+# Manual POS override for core particles/prepositions/conjunctions
+MANUAL_POS_HARF = {normalize_ar(x) for x in [
+    "في","من","على","إلى","عن","مع","حتى","إلا","حيث","منذ","لا","بل","قد","ليس",
+    "لم","لن","سوف","ثم","إذا","أو","و","أم","لأن","لكن","إذ","كي","لعل","يا","ل",
+    "بعد","قبل","فوق","تحت","بين","عند","لدى","بدون"
+]}
+
+# Manual examples for frequent function words (MSA-friendly)
+MANUAL_EXAMPLES = {
+    "في": ("أعيشُ في المدينة.", "I live in the city."),
+    "من": ("أنا من كازاخستان.", "I am from Kazakhstan."),
+    "على": ("الكتاب على الطاولة.", "The book is on the table."),
+    "إلى": ("سأذهب إلى البيت.", "I will go home."),
+    "عن": ("تحدّثنا عن العمل.", "We talked about work."),
+    "مع": ("سأذهب مع صديقي.", "I will go with my friend."),
+    "و": ("أنا وأنت أصدقاء.", "You and I are friends."),
+    "أو": ("اشرب ماءً أو شايًا.", "Drink water or tea."),
+    "لكن": ("أريد أن آتي، لكنني مشغول.", "I want to come, but I'm busy."),
+    "لأن": ("أنا سعيد لأنك هنا.", "I'm happy because you are here."),
+    "إذا": ("إذا تأخرتُ سأتصل.", "If I am late, I will call."),
+    "لم": ("لم أفهم.", "I didn't understand."),
+    "لن": ("لن أنسى.", "I will not forget."),
+    "لا": ("لا تقلق.", "Don't worry."),
+    "نعم": ("نعم، أفهم.", "Yes, I understand."),
+    "هل": ("هل أنت بخير؟", "Are you okay?"),
+    "هذا": ("هذا كتاب.", "This is a book."),
+    "ذلك": ("ذلك بعيد.", "That is far."),
+    "هناك": ("هناك مشكلة.", "There is a problem."),
+    "هنا": ("أنا هنا.", "I am here."),
+    "كل": ("كل يوم.", "Every day."),
+    "أي": ("أي كتاب تريد؟", "Which book do you want?")
+}
 
 def strip_tashkeel(s: str) -> str:
     return TASHKEEL_RE.sub("", s or "")
@@ -190,6 +293,66 @@ def extract_tar_bz2(tar_path: Path, out_dir: Path):
 
 
 # ---------------------------------------------------------------------------
+# Kaikki (Wiktionary) glossary
+# ---------------------------------------------------------------------------
+def ensure_kaikki():
+    if not KAIKKI_JSONL.exists():
+        download_file(KAIKKI_URL, KAIKKI_JSONL)
+
+
+def build_kaikki_glosses(target_words: List[str]) -> Dict[str, Dict[str, str]]:
+    """
+    Build normalized-lemma → {gloss, pos, diac} mapping from Kaikki JSONL.
+    Only extracts entries for target lemmas (efficient streaming).
+    """
+    ensure_kaikki()
+    targets = {normalize_ar(w) for w in target_words if w}
+    out: Dict[str, Dict[str, str]] = {}
+    with open(KAIKKI_JSONL, encoding="utf-8") as f:
+        for line in f:
+            try:
+                data = json.loads(line)
+            except Exception:
+                continue
+            if data.get("lang") != "Arabic":
+                continue
+            word = (data.get("word") or "").strip()
+            if not word:
+                continue
+            norm = normalize_ar(word)
+            if norm not in targets:
+                continue
+            # collect glosses (English)
+            glosses = []
+            for s in data.get("senses", []) or []:
+                for g in s.get("glosses", []) or []:
+                    if g and g not in glosses:
+                        glosses.append(g)
+                for t in s.get("translations", []) or []:
+                    if t.get("lang") == "en":
+                        w = t.get("word") or ""
+                        if w and w not in glosses:
+                            glosses.append(w)
+                if len(glosses) >= 4:
+                    break
+            gloss = limit_gloss("; ".join(glosses))
+            pos = (data.get("pos") or "").strip().lower()
+            diac = word if has_tashkeel(word) else ""
+            existing = out.get(norm)
+            if not existing:
+                out[norm] = {"gloss": gloss, "pos": pos, "diac": diac}
+            else:
+                # fill missing fields only
+                if not existing.get("gloss") and gloss:
+                    existing["gloss"] = gloss
+                if not existing.get("pos") and pos:
+                    existing["pos"] = pos
+                if not existing.get("diac") and diac:
+                    existing["diac"] = diac
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Tatoeba Examples
 # ---------------------------------------------------------------------------
 def ensure_tatoeba():
@@ -209,7 +372,8 @@ def build_tatoeba_examples(target_words: List[str],
     Build word -> (ar_sentence, en_sentence) mapping from Tatoeba.
     Only keeps at most `per_word` sentence per word.
     """
-    if CACHE_EXAMPLES.exists():
+    force_examples = os.environ.get("AR_FORCE_EXAMPLES", "0").lower() in ("1","true","yes")
+    if CACHE_EXAMPLES.exists() and not force_examples:
         try:
             cached = json.loads(CACHE_EXAMPLES.read_text(encoding="utf-8"))
             if cached:
@@ -376,6 +540,8 @@ def translate_in_batches(texts: List[str], tok, model, batch_size=64, max_len=12
 
 
 def load_cache(path: Path) -> Dict[str, str]:
+    if os.environ.get("AR_RESET_CACHE", "0").lower() in ("1","true","yes"):
+        return {}
     if path.exists():
         try:
             return json.loads(path.read_text(encoding="utf-8"))
@@ -429,6 +595,37 @@ def load_base_entries() -> List[Dict]:
     return []
 
 
+def load_master_list(target_n: int) -> List[Dict]:
+    """Load the 4.5k master list (lemma-based) from CSV."""
+    if not MASTER_LIST_CSV.exists():
+        return []
+    rows = []
+    with open(MASTER_LIST_CSV, encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            rows.append(row)
+    rows = rows[:target_n] if target_n else rows
+    out = []
+    for i, r in enumerate(rows):
+        word = (r.get("arabic_lemma") or "").strip()
+        if not word or not is_arabic_word(word):
+            continue
+        out.append({
+            "w": word,
+            "r": (r.get("root_if_relevant") or "").strip(),
+            "pl": "",
+            "en": (r.get("english_core_gloss") or "").strip(),
+            "ru": "",
+            "xa": "",
+            "xe": "",
+            "xr": "",
+            "tier": 1 + (i // max(1, target_n // 7)),
+            "level": 1 + (i // max(1, target_n // 7)),
+            "pos": (r.get("part_of_speech") or "").strip()
+        })
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Main rebuild
 # ---------------------------------------------------------------------------
@@ -442,43 +639,26 @@ def rebuild():
         ensure_tatoeba()
     ensure_diacritizer()
 
-    # 1) Load sources
-    deck = load_deck_entries()  # enriched source with EN + examples
-    deck_map = {normalize_token(d.get("diacritized_word","")): d for d in deck}
-
-    base_entries = load_base_entries()
-    if base_entries:
-        base_entries = base_entries[:target_n]
-    else:
-        # Build a base list from deck or wordfreq if needed
-        if deck:
-            base_entries = []
-            for i, d in enumerate(deck[:target_n]):
-                base_entries.append({
-                    "w": d.get("diacritized_word",""),
-                    "r": d.get("root_word",""),
-                    "pl": "",
-                    "en": d.get("english_translation",""),
-                    "ru": "",
-                    "xa": d.get("example_sentence_native",""),
-                    "xe": d.get("example_sentence_english",""),
-                    "xr": "",
-                    "tier": 1 + (i // max(1, target_n // 7)),
-                    "level": 1 + (i // max(1, target_n // 7)),
-                    "pos": d.get("pos","")
-                })
-        else:
-            # Fallback to wordfreq if deck is missing
-            words = top_n_list("ar", 6000)[:target_n]
-            base_entries = [{
-                "w": w, "r":"", "pl":"", "en":"", "ru":"",
-                "xa":"", "xe":"", "xr":"",
-                "tier": 1 + (i // max(1, target_n // 7)),
-                "level": 1 + (i // max(1, target_n // 7)),
-                "pos":""
-            } for i, w in enumerate(words)]
+    # 1) Load sources (master list preferred)
+    base_entries = load_master_list(target_n)
+    if not base_entries:
+        base_entries = load_base_entries()
+    if not base_entries:
+        # Fallback to wordfreq if everything else is missing
+        words = top_n_list("ar", 6000)[:target_n]
+        base_entries = [{
+            "w": w, "r":"", "pl":"", "en":"", "ru":"",
+            "xa":"", "xe":"", "xr":"",
+            "tier": 1 + (i // max(1, target_n // 7)),
+            "level": 1 + (i // max(1, target_n // 7)),
+            "pos":""
+        } for i, w in enumerate(words)]
 
     cleaned_words = [e.get("w","").strip() for e in base_entries]
+    master_norms = {normalize_ar(w) for w in cleaned_words}
+
+    # 2) Kaikki glosses (primary glossary)
+    kaik_map = build_kaikki_glosses(cleaned_words)
 
     # 3) Build example map (word -> (ar_sentence, en_sentence))
     example_map = {}
@@ -508,10 +688,11 @@ def rebuild():
     mt_engine = os.environ.get("AR_MT_ENGINE", "AUTO").lower().strip()
     nllb_tok = nllb_model = None
     m2m_tok = m2m_model = None
-    opus_tok = opus_model = None
+    opus_ar_en_tok = opus_ar_en_model = None
+    opus_en_ru_tok = opus_en_ru_model = None
 
     def ensure_engine(engine: str):
-        nonlocal nllb_tok, nllb_model, m2m_tok, m2m_model, opus_tok, opus_model
+        nonlocal nllb_tok, nllb_model, m2m_tok, m2m_model, opus_ar_en_tok, opus_ar_en_model, opus_en_ru_tok, opus_en_ru_model
         if engine == "nllb":
             if nllb_tok is None or nllb_model is None:
                 nllb_tok, nllb_model = load_nllb()
@@ -519,8 +700,11 @@ def rebuild():
             if m2m_tok is None or m2m_model is None:
                 m2m_tok, m2m_model = load_m2m100()
         else:
-            if opus_tok is None or opus_model is None:
-                opus_tok, opus_model = load_mt("Helsinki-NLP/opus-mt-en-ru")
+            # OPUS models for specific directions
+            if opus_ar_en_tok is None or opus_ar_en_model is None:
+                opus_ar_en_tok, opus_ar_en_model = load_mt("Helsinki-NLP/opus-mt-ar-en")
+            if opus_en_ru_tok is None or opus_en_ru_model is None:
+                opus_en_ru_tok, opus_en_ru_model = load_mt("Helsinki-NLP/opus-mt-en-ru")
 
     def translate_texts(texts: List[str], src: str, tgt: str) -> List[str]:
         if not texts:
@@ -537,16 +721,25 @@ def rebuild():
                     return translate_m2m100(texts, m2m_tok, m2m_model, src.split("_")[0], tgt.split("_")[0])
                 except Exception:
                     ensure_engine("opus")
-                    return translate_in_batches(texts, opus_tok, opus_model, batch_size=32)
+                    # OPUS fallback by direction
+                    if src.startswith("arb") and tgt.startswith("eng"):
+                        return translate_in_batches(texts, opus_ar_en_tok, opus_ar_en_model, batch_size=32)
+                    if src.startswith("eng") and tgt.startswith("rus"):
+                        return translate_in_batches(texts, opus_en_ru_tok, opus_en_ru_model, batch_size=32)
+                    return translate_in_batches(texts, opus_en_ru_tok, opus_en_ru_model, batch_size=32)
         elif engine == "nllb":
             ensure_engine("nllb")
             return translate_nllb(texts, nllb_tok, nllb_model, src, tgt)
         elif engine == "m2m100":
             ensure_engine("m2m100")
-            return translate_m2m100(texts, m2m_tok, m2m_model, src, tgt)
+            return translate_m2m100(texts, m2m_tok, m2m_model, src.split("_")[0], tgt.split("_")[0])
         else:
             ensure_engine("opus")
-            return translate_in_batches(texts, opus_tok, opus_model, batch_size=32)
+            if src.startswith("arb") and tgt.startswith("eng"):
+                return translate_in_batches(texts, opus_ar_en_tok, opus_ar_en_model, batch_size=32)
+            if src.startswith("eng") and tgt.startswith("rus"):
+                return translate_in_batches(texts, opus_en_ru_tok, opus_en_ru_model, batch_size=32)
+            return translate_in_batches(texts, opus_en_ru_tok, opus_en_ru_model, batch_size=32)
 
     def match_fix_key(word: str, root: str, pos: str) -> str:
         root_letters = normalize_ar(root)
@@ -564,27 +757,39 @@ def rebuild():
         if not word:
             continue
         base_norm = normalize_token(word)
-        d = deck_map.get(base_norm, {})
+        km = kaik_map.get(normalize_ar(word), {})
 
-        root = clean_root((base.get("r") or "").strip() or (d.get("root_word") or "").strip())
-        pos_raw = (d.get("pos") or base.get("pos") or "").strip().lower()
+        root = clean_root((base.get("r") or "").strip())
+        pos_raw = (km.get("pos") or base.get("pos") or "").strip().lower()
 
         # Map POS to Arabic category
-        if "فعل" in pos_raw or pos_raw.startswith("verb"):
+        norm_word = normalize_ar(word)
+        if norm_word in MANUAL_POS_HARF:
+            pos = "حرف"
+        elif "فعل" in pos_raw or pos_raw.startswith("verb"):
             pos = "فعل"
-        elif "حرف" in pos_raw or pos_raw in {"conjunction", "preposition", "particle", "interjection", "determiner"}:
+        elif pos_raw in {"conjunction", "conj", "preposition", "prep", "adp", "particle", "part",
+                         "interjection", "det", "determiner"}:
+            pos = "حرف"
+        elif "حرف" in pos_raw:
             pos = "حرف"
         else:
             pos = "اسم"
 
-        # English gloss
-        en = limit_gloss(d.get("english_translation") or base.get("en") or "")
+        # English gloss (manual → Kaikki → master list → cache)
+        manual_gloss = MANUAL_GLOSS.get(normalize_ar(word), "")
+        en = manual_gloss or limit_gloss(km.get("gloss") or "")
+        if not en:
+            en = limit_gloss(base.get("en") or "")
         if not en:
             en = limit_gloss(en_by_word_norm.get(normalize_ar(word), ""))
 
         # Example sentences
-        ex_ar = (d.get("example_sentence_native") or base.get("xa") or "").strip()
-        ex_en = (d.get("example_sentence_english") or base.get("xe") or "").strip()
+        ex_ar = (base.get("xa") or "").strip()
+        ex_en = (base.get("xe") or "").strip()
+        manual_ex = MANUAL_EXAMPLES.get(normalize_ar(word))
+        if manual_ex:
+            ex_ar, ex_en = manual_ex
 
         # Ensure example contains word; fallback to Tatoeba
         if ex_ar:
@@ -594,10 +799,17 @@ def rebuild():
         if not ex_ar and word in example_map:
             ex_ar, ex_en = example_map[word]
 
-        # Fallback template if still empty
+        # Fallback template if still empty (simple, readable, and word-containing)
         if not ex_ar:
-            ex_ar = f"أُحِبُّ {word}."
-            ex_en = f"I like {en or 'it'}."
+            if pos == "فعل":
+                ex_ar = f"هُوَ {word}."
+                ex_en = f"He {en or 'did it'}."
+            elif pos == "اسم":
+                ex_ar = f"هذا {word}."
+                ex_en = f"This is {en or 'a thing'}."
+            else:
+                ex_ar = f"هذه جملة فيها {word}."
+                ex_en = f"This sentence contains {en or 'the word'}."
         # If English example missing, translate from Arabic
         if not ex_en and use_mt:
             try:
@@ -609,6 +821,10 @@ def rebuild():
         if ex_ar in used_examples and word in example_map:
             ex_ar, ex_en = example_map.get(word, (ex_ar, ex_en))
         used_examples.add(ex_ar)
+
+        # Prefer Kaikki diacritized form if available
+        if km.get("diac"):
+            word = km["diac"]
 
         # Diacritize only if needed
         if not has_tashkeel(word):
@@ -737,6 +953,29 @@ def rebuild():
     # Save
     OUT_WORDS.write_text("const AR_WORDS = " + json.dumps(entries, ensure_ascii=False) + ";", encoding="utf-8")
     print("Rebuild complete. Words:", len(entries))
+
+    # Save enriched master list (optional, for audits)
+    if base_entries and MASTER_LIST_CSV.exists():
+        try:
+            with open(MASTER_LIST_ENRICHED, "w", encoding="utf-8", newline="") as f:
+                fieldnames = [
+                    "rank","arabic_lemma","english_core_gloss","part_of_speech","root_if_relevant",
+                    "estimated_frequency_tier","register_label"
+                ]
+                writer = csv.DictWriter(f, fieldnames=fieldnames)
+                writer.writeheader()
+                for idx, e in enumerate(entries, start=1):
+                    writer.writerow({
+                        "rank": idx,
+                        "arabic_lemma": e.get("w",""),
+                        "english_core_gloss": e.get("en",""),
+                        "part_of_speech": e.get("pos",""),
+                        "root_if_relevant": e.get("r",""),
+                        "estimated_frequency_tier": f"T{e.get('tier',1)}",
+                        "register_label": ""
+                    })
+        except Exception as e:
+            print("Could not write enriched master list:", e)
 
 
 if __name__ == "__main__":
