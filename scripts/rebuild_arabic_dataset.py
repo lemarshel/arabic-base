@@ -791,6 +791,7 @@ def rebuild():
     max_sent = int(os.environ.get("AR_MAX_SENT", "50000"))
     stage = os.environ.get("AR_STAGE", "full").lower().strip()
     use_tatoeba = os.environ.get("AR_TATOEBA", "1").lower() not in ("0","false","no")
+    force_diac = os.environ.get("AR_FORCE_DIAC", "0").lower() in ("1","true","yes")
     if use_tatoeba:
         ensure_tatoeba()
     ensure_diacritizer()
@@ -999,7 +1000,7 @@ def rebuild():
             word = km["diac"]
 
         # Diacritize only if needed
-        if not has_tashkeel(word):
+        if force_diac or (not has_tashkeel(word)):
             if word in cache_diac:
                 word_diac = cache_diac[word]
             else:
@@ -1012,7 +1013,7 @@ def rebuild():
         if base_word_key in WORD_DIAC_OVERRIDES:
             word_diac = WORD_DIAC_OVERRIDES[base_word_key]
 
-        if not has_tashkeel(ex_ar):
+        if force_diac or (not has_tashkeel(ex_ar)):
             if ex_ar in cache_diac:
                 ex_ar_diac = cache_diac[ex_ar]
             else:
