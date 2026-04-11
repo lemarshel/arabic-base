@@ -1228,6 +1228,7 @@ document.addEventListener('DOMContentLoaded', function(){
   const newsOv  = $('news-overlay');
   const newsX   = $('news-close');
   const newsSel = $('news-select');
+  const newsSelInline = $('news-select-inline');
   const newsVid = $('news-player');
   function setNewsChannel(url){
     if(!newsVid) return;
@@ -1239,15 +1240,27 @@ document.addEventListener('DOMContentLoaded', function(){
       if(p && p.catch) p.catch(()=>{});
     }
   }
-  if(newsSel && NEWS_CHANNELS.length){
-    newsSel.innerHTML = NEWS_CHANNELS.map(ch=>`<option value="${ch.url}">${ch.name}</option>`).join('');
-    setNewsChannel(NEWS_CHANNELS[0].url);
-    newsSel.addEventListener('change', ()=> setNewsChannel(newsSel.value));
+  if(NEWS_CHANNELS.length){
+    if(newsSel) newsSel.innerHTML = NEWS_CHANNELS.map(ch=>`<option value="${ch.url}">${ch.name}</option>`).join('');
+    if(newsSelInline) newsSelInline.innerHTML = NEWS_CHANNELS.map(ch=>`<option value="${ch.url}">${ch.name}</option>`).join('');
+    const defaultUrl = NEWS_CHANNELS[0].url;
+    if(newsSel) newsSel.value = defaultUrl;
+    if(newsSelInline) newsSelInline.value = defaultUrl;
+    setNewsChannel(defaultUrl);
+    if(newsSel) newsSel.addEventListener('change', ()=>{
+      if(newsSelInline) newsSelInline.value = newsSel.value;
+      setNewsChannel(newsSel.value);
+    });
+    if(newsSelInline) newsSelInline.addEventListener('change', ()=>{
+      if(newsSel) newsSel.value = newsSelInline.value;
+      setNewsChannel(newsSelInline.value);
+    });
   }
   if(newsBtn && newsOv){
     newsBtn.addEventListener('click', ()=>{
       newsOv.classList.add('open');
-      if(newsSel && newsSel.value) setNewsChannel(newsSel.value);
+      var url = (newsSelInline && newsSelInline.value) ? newsSelInline.value : (newsSel ? newsSel.value : '');
+      if(url) setNewsChannel(url);
     });
   }
   function closeNews(){
