@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Arabic 4500 &#x2014; Vocabulary</title>
+<title>Arabic 5000 &#x2014; Vocabulary</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Naskh+Arabic:wght@400;700&family=Amiri:wght@400;700&family=Noto+Sans:wght@400;700&display=swap" rel="stylesheet">
 <style id="dyn-font"></style>
@@ -111,6 +111,25 @@
 </div>
 
 <!-- =========================================================
+     News overlay (Arabic news streams)
+     ========================================================= -->
+<div id="news-overlay" class="overlay-modal">
+  <div class="modal-box" style="max-width:960px">
+    <button id="news-close" class="modal-close">&#x2715;</button>
+    <h2><span class="ui-ru">&#x41D;&#x43E;&#x432;&#x43E;&#x441;&#x442;&#x438;</span><span class="ui-en">Arabic News</span></h2>
+    <div class="news-controls">
+      <label class="news-label"><span class="ui-ru">&#x41A;&#x430;&#x43D;&#x430;&#x43B;:</span><span class="ui-en">Channel:</span></label>
+      <select id="news-select" class="tb-sel"></select>
+    </div>
+    <video id="news-player" class="news-player" controls playsinline></video>
+    <div class="news-note">
+      <span class="ui-ru">&#x415;&#x441;&#x43B;&#x438; &#x43F;&#x43E;&#x442;&#x43E;&#x43A; &#x43D;&#x435; &#x43E;&#x442;&#x43A;&#x440;&#x44B;&#x432;&#x430;&#x435;&#x442;&#x441;&#x44F;, &#x432;&#x44B;&#x431;&#x435;&#x440;&#x438;&#x442;&#x435; &#x434;&#x440;&#x443;&#x433;&#x43E;&#x439; &#x43A;&#x430;&#x43D;&#x430;&#x43B;.</span>
+      <span class="ui-en">If a stream doesn&#x27;t play, try another channel.</span>
+    </div>
+  </div>
+</div>
+
+<!-- =========================================================
      TOOLBAR: search, stats, theme, palette, language, filters
      ========================================================= -->
 <div id="toolbar">
@@ -189,6 +208,7 @@
     <button class="tb-btn" id="expand-all"><span class="ui-ru">&#x420;&#x430;&#x437;&#x432;&#x435;&#x440;&#x43D;&#x443;&#x442;&#x44C;</span><span class="ui-en">Expand</span></button>
     <button class="tb-btn" id="study-btn"><span class="ui-ru">&#x41A;&#x430;&#x440;&#x442;&#x43E;&#x447;&#x43A;&#x438;</span><span class="ui-en">Study</span></button>
     <button class="tb-btn" id="quiz-btn"><span class="ui-ru">&#x422;&#x435;&#x441;&#x442;</span><span class="ui-en">Quiz</span></button>
+    <button class="tb-btn" id="news-btn"><span class="ui-ru">&#x41D;&#x43E;&#x432;&#x43E;&#x441;&#x442;&#x438;</span><span class="ui-en">News</span></button>
     <button class="tb-btn" id="snap-btn"><span class="ui-ru">&#x421;&#x43D;&#x430;&#x43F;&#x448;&#x43E;&#x442;&#x44B;</span><span class="ui-en">Snapshots</span></button>
     <button class="tb-btn" id="font-panel-btn"><span class="ui-ru">&#x428;&#x440;&#x438;&#x444;&#x442;&#x44B;</span><span class="ui-en">Fonts</span></button>
     <button class="tb-btn" id="export-btn">CSV</button>
@@ -235,8 +255,8 @@
 <div id="page-hdr">
   <span class="ar-title">&#x645;&#x64F;&#x641;&#x652;&#x631;&#x64E;&#x62F;&#x64E;&#x627;&#x62A;&#x64F; &#x627;&#x644;&#x639;&#x64E;&#x631;&#x64E;&#x628;&#x650;&#x64A;&#x651;&#x64E;&#x629;&#x650;</span>
   <div class="subtitle">
-    <span class="ui-ru">Arabic &#x2014; 4500 &#x441;&#x43B;&#x43E;&#x432; &bull; &#x423;&#x440;&#x43E;&#x432;&#x43D;&#x438; 1&#x2013;7 &bull; &#x41F;&#x43E; &#x441;&#x43B;&#x43E;&#x436;&#x43D;&#x43E;&#x441;&#x442;&#x438; &#x430;&#x43D;&#x433;&#x43B;&#x438;&#x439;&#x441;&#x43A;&#x43E;&#x433;&#x43E; &#x437;&#x43D;&#x430;&#x447;&#x435;&#x43D;&#x438;&#x44F;</span>
-    <span class="ui-en">Arabic &#x2014; 4500 words &bull; Levels 1&#x2013;7 &bull; Difficulty-based</span>
+    <span class="ui-ru">Arabic &#x2014; 5000 &#x441;&#x43B;&#x43E;&#x432; &bull; &#x423;&#x440;&#x43E;&#x432;&#x43D;&#x438; 1&#x2013;7 &bull; &#x41F;&#x43E; &#x441;&#x43B;&#x43E;&#x436;&#x43D;&#x43E;&#x441;&#x442;&#x438; &#x430;&#x43D;&#x433;&#x43B;&#x438;&#x439;&#x441;&#x43A;&#x43E;&#x433;&#x43E; &#x437;&#x43D;&#x430;&#x447;&#x435;&#x43D;&#x438;&#x44F;</span>
+    <span class="ui-en">Arabic &#x2014; 5000 words &bull; Levels 1&#x2013;7 &bull; Difficulty-based</span>
   </div>
 </div>
 
@@ -390,7 +410,7 @@
   </div>
 </div>
 
-<script src="words.js?v=20260325-01"></script>
+<script src="words.js?v=20260411-01"></script>
 <script src="arabic.js?v=20260325-01"></script>
 
 </body>

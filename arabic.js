@@ -122,6 +122,16 @@ const SUBPOS_LISTS = {
   number: new Set(['صفر','واحد','احد','اثنان','اثنين','ثلاثة','اربعة','خمسة','ستة','سبعة','ثمانية','تسعة','عشرة','مئة','مائة','الف','مليون']),
   time: new Set(['اليوم','امس','غدا','الان','حين','وقت','ساعة','دقيقة','شهر','سنة','عام','اسبوع','صباح','مساء','ليلة'])
 };
+
+// Arabic news channels (from iptv-org/iptv)
+const NEWS_CHANNELS = [
+  { name: 'Al Jazeera Arabic', url: 'https://live-hls-v3-aja.getaj.net/AJA-V3/index.m3u8' },
+  { name: 'Al Arabiya', url: 'https://live.alarabiya.net/alarabiapublish/alarabiya.smil/playlist.m3u8' },
+  { name: 'Al Hadath', url: 'https://av.alarabiya.net/alarabiapublish/alhadath.smil/playlist.m3u8' },
+  { name: 'Asharq News', url: 'https://live-news.asharq.com/asharq.m3u8' },
+  { name: 'Sky News Arabia', url: 'https://stream.skynewsarabia.com/ott/ott.m3u8' },
+  { name: 'KTV News', url: 'https://cdn-globecast.akamaized.net/live/eds/ktv_al_akhbar/hls_roku/ktv_al_akhbar.m3u8' }
+];
 function getSubposList(word){
   const n = normalizeArToken(word);
   const matches = [];
@@ -1212,6 +1222,40 @@ document.addEventListener('DOMContentLoaded', function(){
   // Quiz
   const quizBtn = $('quiz-btn');  if(quizBtn)  quizBtn.addEventListener('click',  startQuiz);
   const quizX   = $('quiz-close'); if(quizX)   quizX.addEventListener('click',    ()=>$('quiz-overlay').classList.remove('open'));
+
+  // News overlay
+  const newsBtn = $('news-btn');
+  const newsOv  = $('news-overlay');
+  const newsX   = $('news-close');
+  const newsSel = $('news-select');
+  const newsVid = $('news-player');
+  function setNewsChannel(url){
+    if(!newsVid) return;
+    try{ newsVid.pause(); }catch(e){}
+    newsVid.src = url || '';
+    newsVid.load();
+    if(url){
+      const p = newsVid.play();
+      if(p && p.catch) p.catch(()=>{});
+    }
+  }
+  if(newsSel && NEWS_CHANNELS.length){
+    newsSel.innerHTML = NEWS_CHANNELS.map(ch=>`<option value="${ch.url}">${ch.name}</option>`).join('');
+    setNewsChannel(NEWS_CHANNELS[0].url);
+    newsSel.addEventListener('change', ()=> setNewsChannel(newsSel.value));
+  }
+  if(newsBtn && newsOv){
+    newsBtn.addEventListener('click', ()=>{
+      newsOv.classList.add('open');
+      if(newsSel && newsSel.value) setNewsChannel(newsSel.value);
+    });
+  }
+  function closeNews(){
+    if(newsOv) newsOv.classList.remove('open');
+    if(newsVid) try{ newsVid.pause(); }catch(e){}
+  }
+  if(newsX) newsX.addEventListener('click', closeNews);
+  if(newsOv) newsOv.addEventListener('click', e=>{ if(e.target === newsOv) closeNews(); });
 
   // Collapse/Expand all
   const colAll = $('collapse-all');
