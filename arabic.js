@@ -123,15 +123,12 @@ const SUBPOS_LISTS = {
   time: new Set(['اليوم','امس','غدا','الان','حين','وقت','ساعة','دقيقة','شهر','سنة','عام','اسبوع','صباح','مساء','ليلة'])
 };
 
-// Arabic news channels (from iptv-org/iptv)
-const NEWS_CHANNELS = [
-  { name: 'Al Jazeera Arabic', url: 'https://live-hls-v3-aja.getaj.net/AJA-V3/index.m3u8' },
-  { name: 'Al Arabiya', url: 'https://live.alarabiya.net/alarabiapublish/alarabiya.smil/playlist.m3u8' },
-  { name: 'Al Hadath', url: 'https://av.alarabiya.net/alarabiapublish/alhadath.smil/playlist.m3u8' },
-  { name: 'Asharq News', url: 'https://live-news.asharq.com/asharq.m3u8' },
-  { name: 'Sky News Arabia', url: 'https://stream.skynewsarabia.com/ott/ott.m3u8' },
-  { name: 'KTV News', url: 'https://cdn-globecast.akamaized.net/live/eds/ktv_al_akhbar/hls_roku/ktv_al_akhbar.m3u8' }
-];
+// Arabic news channels (auto-generated from iptv-org)
+const NEWS_CHANNELS = (window.ALL_CHANNELS || []).map(row => ({
+  name: row[0],
+  url: row[1],
+  label: row[2]
+}));
 function getSubposList(word){
   const n = normalizeArToken(word);
   const matches = [];
@@ -1240,9 +1237,13 @@ document.addEventListener('DOMContentLoaded', function(){
       if(p && p.catch) p.catch(()=>{});
     }
   }
+  function newsLabel(ch){
+    if(ch.label && ch.label !== 'auto') return ch.name + ' (' + ch.label + ')';
+    return ch.name;
+  }
   if(NEWS_CHANNELS.length){
-    if(newsSel) newsSel.innerHTML = NEWS_CHANNELS.map(ch=>`<option value="${ch.url}">${ch.name}</option>`).join('');
-    if(newsSelInline) newsSelInline.innerHTML = NEWS_CHANNELS.map(ch=>`<option value="${ch.url}">${ch.name}</option>`).join('');
+    if(newsSel) newsSel.innerHTML = NEWS_CHANNELS.map(ch=>`<option value="${ch.url}">${newsLabel(ch)}</option>`).join('');
+    if(newsSelInline) newsSelInline.innerHTML = NEWS_CHANNELS.map(ch=>`<option value="${ch.url}">${newsLabel(ch)}</option>`).join('');
     const defaultUrl = NEWS_CHANNELS[0].url;
     if(newsSel) newsSel.value = defaultUrl;
     if(newsSelInline) newsSelInline.value = defaultUrl;
